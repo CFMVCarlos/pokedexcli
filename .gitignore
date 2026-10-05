@@ -20,3 +20,5 @@ go.work
 
 # Environment variables
 .env
+
+*.log

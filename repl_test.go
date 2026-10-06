@@ -3,7 +3,10 @@ package main
 import (
 	"bufio"
 	"bytes"
+	"encoding/json"
 	"io"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"os/exec"
 	"strings"
@@ -107,6 +110,18 @@ func TestGetCommands(t *testing.T) {
 			expectFound:  true,
 		},
 		{
+			key:          "map",
+			expectedName: "map",
+			expectedDesc: "Displays the next 20 locations",
+			expectFound:  true,
+		},
+		{
+			key:          "mapb",
+			expectedName: "mapb",
+			expectedDesc: "Displays the previous 20 locations",
+			expectFound:  true,
+		},
+		{
 			key:         "invalid",
 			expectFound: false,
 		},
@@ -141,8 +156,8 @@ func TestGetCommands(t *testing.T) {
 		})
 	}
 
-	if len(commands) != 2 {
-		t.Errorf("expected exactly 2 commands registered, got %d", len(commands))
+	if len(commands) != 4 {
+		t.Errorf("expected exactly 4 commands registered, got %d", len(commands))
 	}
 }
 
@@ -272,4 +287,112 @@ func TestCommandExit(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestCommandMapAndMapb(t *testing.T) {
+	t.Run("map on last page", func(t *testing.T) {
+		cfg := &config{
+			next: "",
+		}
+		err := commandMap(cfg)
+		if err == nil || err.Error() != "you're on the last page" {
+			t.Fatalf("expected 'you're on the last page', got: %v", err)
+		}
+	})
+
+	t.Run("mapb on first page", func(t *testing.T) {
+		cfg := &config{
+			previous: "",
+		}
+		err := commandMapb(cfg)
+		if err == nil || err.Error() != "you're on the first page" {
+			t.Fatalf("expected 'you're on the first page', got: %v", err)
+		}
+	})
+
+	t.Run("map and mapb successful pagination", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			path := r.URL.Path
+			if strings.Contains(path, "page2") {
+				resp := locationAreaResponse{
+					Count: 40,
+					Next:  nil,
+					Results: []struct {
+						Name string `json:"name"`
+						URL  string `json:"url"`
+					}{
+						{Name: "area-3", URL: "url-3"},
+						{Name: "area-4", URL: "url-4"},
+					},
+				}
+				prev := "http://" + r.Host + "/page1"
+				resp.Previous = &prev
+				w.Header().Set("Content-Type", "application/json")
+				_ = json.NewEncoder(w).Encode(resp)
+			} else {
+				next := "http://" + r.Host + "/page2"
+				resp := locationAreaResponse{
+					Count: 40,
+					Next:  &next,
+					Results: []struct {
+						Name string `json:"name"`
+						URL  string `json:"url"`
+					}{
+						{Name: "area-1", URL: "url-1"},
+						{Name: "area-2", URL: "url-2"},
+					},
+				}
+				w.Header().Set("Content-Type", "application/json")
+				_ = json.NewEncoder(w).Encode(resp)
+			}
+		}))
+		defer server.Close()
+
+		cfg := &config{
+			next:     server.URL + "/page1",
+			previous: "",
+		}
+
+		// First map call
+		err := commandMap(cfg)
+		if err != nil {
+			t.Fatalf("unexpected error on commandMap: %v", err)
+		}
+		if cfg.next != server.URL+"/page2" {
+			t.Errorf("expected cfg.next to be page2 URL, got %q", cfg.next)
+		}
+		if cfg.previous != "" {
+			t.Errorf("expected cfg.previous to be empty, got %q", cfg.previous)
+		}
+
+		// Second map call (advance to page 2)
+		err = commandMap(cfg)
+		if err != nil {
+			t.Fatalf("unexpected error on second commandMap: %v", err)
+		}
+		if cfg.next != "" {
+			t.Errorf("expected cfg.next to be empty on last page, got %q", cfg.next)
+		}
+		if cfg.previous != server.URL+"/page1" {
+			t.Errorf("expected cfg.previous to be page1 URL, got %q", cfg.previous)
+		}
+
+		// mapb call (go back to page 1)
+		err = commandMapb(cfg)
+		if err != nil {
+			t.Fatalf("unexpected error on commandMapb: %v", err)
+		}
+		if cfg.next != server.URL+"/page2" {
+			t.Errorf("expected cfg.next to be page2 URL after mapb, got %q", cfg.next)
+		}
+		if cfg.previous != "" {
+			t.Errorf("expected cfg.previous to be empty after mapb, got %q", cfg.previous)
+		}
+
+		// mapb call again should fail because we are on the first page
+		err = commandMapb(cfg)
+		if err == nil || err.Error() != "you're on the first page" {
+			t.Fatalf("expected 'you're on the first page', got: %v", err)
+		}
+	})
 }

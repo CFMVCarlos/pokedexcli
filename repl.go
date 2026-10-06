@@ -2,7 +2,9 @@ package main
 
 import (
 	"bufio"
+	"encoding/json"
 	"fmt"
+	"net/http"
 	"os"
 	"strings"
 )
@@ -58,6 +60,53 @@ func commandHelp(config *config) error {
 	return nil
 }
 
+func commandMap(config *config) error {
+	if config.next == "" {
+		return fmt.Errorf("you're on the last page")
+	}
+
+	return printLocationAreas(config, config.next)
+}
+
+func commandMapb(config *config) error {
+	if config.previous == "" {
+		return fmt.Errorf("you're on the first page")
+	}
+
+	return printLocationAreas(config, config.previous)
+}
+
+func printLocationAreas(config *config, url string) error {
+	resp, err := http.Get(url)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	var data locationAreaResponse
+	if err := json.NewDecoder(resp.Body).Decode(&data); err != nil {
+		return err
+	}
+
+	for _, area := range data.Results {
+		fmt.Println(area.Name)
+	}
+
+	if data.Next != nil {
+		config.next = *data.Next
+	} else {
+		config.next = ""
+	}
+
+	if data.Previous != nil {
+		config.previous = *data.Previous
+	} else {
+		config.previous = ""
+	}
+
+	return nil
+}
+
 func GetCommands() map[string]cliCommand {
 	commands := make(map[string]cliCommand)
 
@@ -71,6 +120,18 @@ func GetCommands() map[string]cliCommand {
 		name:        "help",
 		description: "Displays a help message",
 		callback:    commandHelp,
+	}
+
+	commands["map"] = cliCommand{
+		name:        "map",
+		description: "Displays the next 20 locations",
+		callback:    commandMap,
+	}
+
+	commands["mapb"] = cliCommand{
+		name:        "mapb",
+		description: "Displays the previous 20 locations",
+		callback:    commandMapb,
 	}
 
 	return commands

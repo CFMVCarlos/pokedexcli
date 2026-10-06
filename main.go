@@ -9,6 +9,8 @@ func main() {
 
 	config := &config{
 		commands: GetCommands(),
+		next:     "https://pokeapi.co/api/v2/location-area",
+		previous: "",
 	}
 	StartRepl(config)
 }

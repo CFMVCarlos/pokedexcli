@@ -147,13 +147,19 @@ func TestGetCommands(t *testing.T) {
 }
 
 func TestCommandHelp(t *testing.T) {
+	cfg := &config{
+		commands: getCommands(),
+	}
+
 	testCases := []struct {
 		name string
 		call func() error
 	}{
 		{
 			name: "direct commandHelp call",
-			call: commandHelp,
+			call: func() error {
+				return commandHelp(cfg)
+			},
 		},
 		{
 			name: "callback from getCommands",
@@ -162,7 +168,7 @@ func TestCommandHelp(t *testing.T) {
 				if !ok {
 					t.Fatal("help command not found in getCommands")
 				}
-				return cmd.callback()
+				return cmd.callback(cfg)
 			},
 		},
 	}
@@ -207,22 +213,26 @@ func TestCommandHelp(t *testing.T) {
 }
 
 func TestCommandExit(t *testing.T) {
+	cfg := &config{
+		commands: getCommands(),
+	}
+
 	// When executed in subprocess mode, trigger the specified exit scenario and return
 	mode := os.Getenv("TEST_COMMAND_EXIT_MODE")
 	if mode != "" {
 		switch mode {
 		case "direct":
-			_ = commandExit()
+			_ = commandExit(cfg)
 		case "callback":
 			cmd := getCommands()["exit"]
-			_ = cmd.callback()
+			_ = cmd.callback(cfg)
 		case "scanner":
 			scanner := bufio.NewScanner(strings.NewReader("exit\n"))
 			if scanner.Scan() {
 				words := cleanInput(scanner.Text())
 				if len(words) > 0 {
 					cmd := getCommands()[words[0]]
-					_ = cmd.callback()
+					_ = cmd.callback(cfg)
 				}
 			}
 		}

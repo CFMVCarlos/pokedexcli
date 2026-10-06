@@ -8,7 +8,7 @@ func main() {
 	fmt.Println("Welcome to the Pokedex!")
 
 	config := &config{
-		commands: getCommands(),
+		commands: GetCommands(),
 	}
-	startRepl(config)
+	StartRepl(config)
 }

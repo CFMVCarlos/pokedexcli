@@ -7,7 +7,7 @@ import (
 	"strings"
 )
 
-func startRepl(config *config) {
+func StartRepl(config *config) {
 	scanner := bufio.NewScanner(os.Stdin)
 
 	for {
@@ -58,7 +58,7 @@ func commandHelp(config *config) error {
 	return nil
 }
 
-func getCommands() map[string]cliCommand {
+func GetCommands() map[string]cliCommand {
 	commands := make(map[string]cliCommand)
 
 	commands["exit"] = cliCommand{

@@ -82,10 +82,10 @@ func TestCleanInput(t *testing.T) {
 }
 
 func TestGetCommands(t *testing.T) {
-	commands := getCommands()
+	commands := GetCommands()
 
 	if commands == nil {
-		t.Fatal("getCommands() returned nil")
+		t.Fatal("GetCommands() returned nil")
 	}
 
 	expectedCommands := []struct {
@@ -148,7 +148,7 @@ func TestGetCommands(t *testing.T) {
 
 func TestCommandHelp(t *testing.T) {
 	cfg := &config{
-		commands: getCommands(),
+		commands: GetCommands(),
 	}
 
 	testCases := []struct {
@@ -164,7 +164,7 @@ func TestCommandHelp(t *testing.T) {
 		{
 			name: "callback from getCommands",
 			call: func() error {
-				cmd, ok := getCommands()["help"]
+				cmd, ok := GetCommands()["help"]
 				if !ok {
 					t.Fatal("help command not found in getCommands")
 				}
@@ -214,7 +214,7 @@ func TestCommandHelp(t *testing.T) {
 
 func TestCommandExit(t *testing.T) {
 	cfg := &config{
-		commands: getCommands(),
+		commands: GetCommands(),
 	}
 
 	// When executed in subprocess mode, trigger the specified exit scenario and return
@@ -224,14 +224,14 @@ func TestCommandExit(t *testing.T) {
 		case "direct":
 			_ = commandExit(cfg)
 		case "callback":
-			cmd := getCommands()["exit"]
+			cmd := GetCommands()["exit"]
 			_ = cmd.callback(cfg)
 		case "scanner":
 			scanner := bufio.NewScanner(strings.NewReader("exit\n"))
 			if scanner.Scan() {
 				words := cleanInput(scanner.Text())
 				if len(words) > 0 {
-					cmd := getCommands()[words[0]]
+					cmd := GetCommands()[words[0]]
 					_ = cmd.callback(cfg)
 				}
 			}

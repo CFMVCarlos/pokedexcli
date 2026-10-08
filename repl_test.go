@@ -149,6 +149,18 @@ func TestGetCommands(t *testing.T) {
 			expectFound:  true,
 		},
 		{
+			key:          "save",
+			expectedName: "save",
+			expectedDesc: "Save your Pokédex to disk",
+			expectFound:  true,
+		},
+		{
+			key:          "load",
+			expectedName: "load",
+			expectedDesc: "Load your Pokédex from disk",
+			expectFound:  true,
+		},
+		{
 			key:         "invalid",
 			expectFound: false,
 		},
@@ -183,8 +195,8 @@ func TestGetCommands(t *testing.T) {
 		})
 	}
 
-	if len(commands) != 8 {
-		t.Errorf("expected exactly 8 commands registered, got %d", len(commands))
+	if len(commands) != 10 {
+		t.Errorf("expected exactly 10 commands registered, got %d", len(commands))
 	}
 }
 
@@ -815,3 +827,56 @@ func TestCommandPokedex(t *testing.T) {
 		}
 	})
 }
+
+func TestSaveAndLoadPokedex(t *testing.T) {
+	tmpFile, err := os.CreateTemp("", "pokedex-test-*.json")
+	if err != nil {
+		t.Fatalf("failed to create temp file: %v", err)
+	}
+	tmpPath := tmpFile.Name()
+	tmpFile.Close()
+	defer os.Remove(tmpPath)
+
+	cfg := &config{
+		saveFile: tmpPath,
+		pokedex: map[string]Pokemon{
+			"pikachu": {ID: 25, Name: "pikachu", BaseExperience: 112},
+		},
+	}
+
+	// Test commandSave
+	if err := commandSave(cfg); err != nil {
+		t.Fatalf("commandSave returned error: %v", err)
+	}
+
+	// Create new config and load
+	newCfg := &config{
+		saveFile: tmpPath,
+		pokedex:  make(map[string]Pokemon),
+	}
+	if err := commandLoad(newCfg); err != nil {
+		t.Fatalf("commandLoad returned error: %v", err)
+	}
+
+	if p, ok := newCfg.pokedex["pikachu"]; !ok || p.Name != "pikachu" {
+		t.Errorf("expected pikachu in loaded pokedex, got: %+v", newCfg.pokedex)
+	}
+
+	// Test loading when file does not exist
+	nonExistentCfg := &config{
+		saveFile: filepathJoinNonExistent(),
+		pokedex:  make(map[string]Pokemon),
+	}
+	if err := loadPokedex(nonExistentCfg); err != nil {
+		t.Errorf("expected nil error loading non-existent file, got: %v", err)
+	}
+}
+
+func filepathJoinNonExistent() string {
+	return filepathSafeNonExistent()
+}
+
+func filepathSafeNonExistent() string {
+	return "/tmp/non-existent-pokedex-12345.json"
+}
+

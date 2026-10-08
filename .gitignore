@@ -22,3 +22,6 @@ go.work
 .env
 
 *.log
+
+# Saved data
+pokedex.json

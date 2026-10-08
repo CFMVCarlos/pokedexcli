@@ -18,6 +18,7 @@ func main() {
 		previous: "",
 		cache:    pokecache.NewCache(5 * time.Second),
 		pokedex:  make(map[string]Pokemon),
+		saveFile: "pokedex.json",
 	}
 	StartRepl(config)
 }

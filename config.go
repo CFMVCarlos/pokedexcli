@@ -11,13 +11,14 @@ type cliCommand struct {
 }
 
 // config stores the runtime state of the application, including registered commands,
-// pagination URLs for location areas, the response cache, and captured Pokémon.
+// pagination URLs for location areas, the response cache, captured Pokémon, and the save file path.
 type config struct {
 	commands map[string]cliCommand
 	next     string
 	previous string
 	cache    pokecache.Cache
 	pokedex  map[string]Pokemon
+	saveFile string
 }
 
 // Pokemon represents the schema returned by the PokeAPI for a specific Pokémon,

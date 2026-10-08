@@ -14,6 +14,10 @@ import (
 // StartRepl initiates the interactive read-eval-print loop (REPL), scanning standard input
 // for user commands, parsing arguments, and executing registered callbacks.
 func StartRepl(config *config) {
+	if config.pokedex == nil {
+		config.pokedex = make(map[string]Pokemon)
+	}
+	_ = loadPokedex(config)
 	scanner := bufio.NewScanner(os.Stdin)
 
 	for {
@@ -230,6 +234,7 @@ func commandCatch(config *config, args ...string) error {
 			config.pokedex = make(map[string]Pokemon)
 		}
 		config.pokedex[pokemon.Name] = pokemon
+		_ = savePokedex(config)
 	} else {
 		fmt.Printf("%s escaped!\n", pokemon.Name)
 	}
@@ -272,6 +277,72 @@ func commandPokedex(config *config, args ...string) error {
 	for _, pokemon := range config.pokedex {
 		fmt.Printf(" - %s\n", pokemon.Name)
 	}
+	return nil
+}
+
+// savePokedex writes the current caught Pokémon collection to the configured JSON file.
+func savePokedex(cfg *config) error {
+	if cfg == nil || cfg.saveFile == "" {
+		return nil
+	}
+	if cfg.pokedex == nil {
+		cfg.pokedex = make(map[string]Pokemon)
+	}
+	data, err := json.MarshalIndent(cfg.pokedex, "", "  ")
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(cfg.saveFile, data, 0644)
+}
+
+// loadPokedex reads previously saved Pokémon from the configured JSON file.
+func loadPokedex(cfg *config) error {
+	if cfg == nil || cfg.saveFile == "" {
+		return nil
+	}
+	data, err := os.ReadFile(cfg.saveFile)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return err
+	}
+	var loaded map[string]Pokemon
+	if err := json.Unmarshal(data, &loaded); err != nil {
+		return err
+	}
+	if cfg.pokedex == nil {
+		cfg.pokedex = make(map[string]Pokemon)
+	}
+	for k, v := range loaded {
+		cfg.pokedex[k] = v
+	}
+	return nil
+}
+
+// commandSave manually saves the Pokédex to disk.
+func commandSave(config *config, args ...string) error {
+	if err := savePokedex(config); err != nil {
+		return fmt.Errorf("failed to save pokedex: %w", err)
+	}
+	target := config.saveFile
+	if target == "" {
+		target = "in-memory (no file configured)"
+	}
+	fmt.Printf("Pokédex successfully saved to %s (%d Pokémon)\n", target, len(config.pokedex))
+	return nil
+}
+
+// commandLoad manually reloads the Pokédex from disk.
+func commandLoad(config *config, args ...string) error {
+	if err := loadPokedex(config); err != nil {
+		return fmt.Errorf("failed to load pokedex: %w", err)
+	}
+	target := config.saveFile
+	if target == "" {
+		target = "in-memory (no file configured)"
+	}
+	fmt.Printf("Pokédex successfully loaded from %s (%d Pokémon)\n", target, len(config.pokedex))
 	return nil
 }
 
@@ -325,6 +396,18 @@ func GetCommands() map[string]cliCommand {
 		name:        "pokedex",
 		description: "List all caught pokemon",
 		callback:    commandPokedex,
+	}
+
+	commands["save"] = cliCommand{
+		name:        "save",
+		description: "Save your Pokédex to disk",
+		callback:    commandSave,
+	}
+
+	commands["load"] = cliCommand{
+		name:        "load",
+		description: "Load your Pokédex from disk",
+		callback:    commandLoad,
 	}
 
 	return commands

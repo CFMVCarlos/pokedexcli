@@ -422,6 +422,39 @@ func commandSummary(config *config, args ...string) error {
 	return nil
 }
 
+// commandFilter searches and displays all caught Pokémon matching the specified elemental type.
+func commandFilter(config *config, args ...string) error {
+	if len(args) == 0 {
+		return fmt.Errorf("you must provide an elemental type")
+	}
+	targetType := strings.ToLower(args[0])
+
+	var matches []Pokemon
+	for _, p := range config.pokedex {
+		for _, t := range p.Types {
+			if strings.ToLower(t.Type.Name) == targetType {
+				matches = append(matches, p)
+				break
+			}
+		}
+	}
+
+	if len(matches) == 0 {
+		fmt.Printf("No %s Pokémon found in your Pokédex.\n", colorType(targetType))
+		return nil
+	}
+
+	titleType := targetType
+	if len(targetType) > 0 {
+		titleType = strings.ToUpper(targetType[:1]) + targetType[1:]
+	}
+	fmt.Printf("%s Pokémon in your Pokédex:\n", titleType)
+	for _, p := range matches {
+		fmt.Printf(" - %s\n", p.Name)
+	}
+	return nil
+}
+
 // GetCommands creates and returns the registry mapping command names to their cliCommand definitions.
 func GetCommands() map[string]cliCommand {
 	commands := make(map[string]cliCommand)
@@ -496,6 +529,12 @@ func GetCommands() map[string]cliCommand {
 		name:        "summary",
 		description: "Display trainer statistics and collection overview",
 		callback:    commandSummary,
+	}
+
+	commands["filter"] = cliCommand{
+		name:        "filter",
+		description: "Filter caught Pokémon by elemental type",
+		callback:    commandFilter,
 	}
 
 	return commands

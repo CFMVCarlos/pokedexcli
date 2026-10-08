@@ -178,6 +178,12 @@ func TestGetCommands(t *testing.T) {
 			expectFound:  true,
 		},
 		{
+			key:          "filter",
+			expectedName: "filter",
+			expectedDesc: "Filter caught Pokémon by elemental type",
+			expectFound:  true,
+		},
+		{
 			key:         "invalid",
 			expectFound: false,
 		},
@@ -212,8 +218,8 @@ func TestGetCommands(t *testing.T) {
 		})
 	}
 
-	if len(commands) != 12 {
-		t.Errorf("expected exactly 12 commands registered, got %d", len(commands))
+	if len(commands) != 13 {
+		t.Errorf("expected exactly 13 commands registered, got %d", len(commands))
 	}
 }
 
@@ -1091,6 +1097,123 @@ func TestCommandSummary(t *testing.T) {
 		}
 	})
 }
+
+func TestCommandFilter(t *testing.T) {
+	t.Run("missing type argument", func(t *testing.T) {
+		cfg := &config{
+			pokedex: make(map[string]Pokemon),
+		}
+		err := commandFilter(cfg)
+		if err == nil {
+			t.Fatal("expected error when no type argument is provided, got nil")
+		}
+	})
+
+	t.Run("filter with no matching pokemon", func(t *testing.T) {
+		cfg := &config{
+			pokedex: make(map[string]Pokemon),
+		}
+
+		oldStdout := os.Stdout
+		r, w, err := os.Pipe()
+		if err != nil {
+			t.Fatalf("failed to create pipe: %v", err)
+		}
+		os.Stdout = w
+
+		callErr := commandFilter(cfg, "fire")
+
+		w.Close()
+		os.Stdout = oldStdout
+
+		var buf bytes.Buffer
+		_, _ = io.Copy(&buf, r)
+		r.Close()
+
+		if callErr != nil {
+			t.Fatalf("unexpected error: %v", callErr)
+		}
+
+		output := buf.String()
+		expected := "No fire Pokémon found in your Pokédex."
+		if !strings.Contains(output, expected) {
+			t.Errorf("expected output to contain %q, got: %q", expected, output)
+		}
+	})
+
+	t.Run("filter with matching pokemon", func(t *testing.T) {
+		p1 := Pokemon{
+			Name: "squirtle",
+		}
+		p1.Types = []struct {
+			Slot int `json:"slot"`
+			Type struct {
+				Name string `json:"name"`
+				URL  string `json:"url"`
+			} `json:"type"`
+		}{
+			{Type: struct {
+				Name string `json:"name"`
+				URL  string `json:"url"`
+			}{Name: "water"}},
+		}
+
+		p2 := Pokemon{
+			Name: "charmander",
+		}
+		p2.Types = []struct {
+			Slot int `json:"slot"`
+			Type struct {
+				Name string `json:"name"`
+				URL  string `json:"url"`
+			} `json:"type"`
+		}{
+			{Type: struct {
+				Name string `json:"name"`
+				URL  string `json:"url"`
+			}{Name: "fire"}},
+		}
+
+		cfg := &config{
+			pokedex: map[string]Pokemon{
+				"squirtle":   p1,
+				"charmander": p2,
+			},
+		}
+
+		oldStdout := os.Stdout
+		r, w, err := os.Pipe()
+		if err != nil {
+			t.Fatalf("failed to create pipe: %v", err)
+		}
+		os.Stdout = w
+
+		callErr := commandFilter(cfg, "water")
+
+		w.Close()
+		os.Stdout = oldStdout
+
+		var buf bytes.Buffer
+		_, _ = io.Copy(&buf, r)
+		r.Close()
+
+		if callErr != nil {
+			t.Fatalf("unexpected error: %v", callErr)
+		}
+
+		output := buf.String()
+		if !strings.Contains(output, "Water Pokémon in your Pokédex:") {
+			t.Errorf("expected header in output, got: %q", output)
+		}
+		if !strings.Contains(output, " - squirtle") {
+			t.Errorf("expected squirtle in output, got: %q", output)
+		}
+		if strings.Contains(output, "charmander") {
+			t.Errorf("charmander should not be listed under water filter, got: %q", output)
+		}
+	})
+}
+
 
 
 

@@ -10,7 +10,7 @@ import (
 // and automatic entry reaping based on a configurable time-to-live interval.
 type Cache struct {
 	cache map[string]cacheEntry
-	mux   *sync.Mutex
+	mux   *sync.RWMutex
 }
 
 // cacheEntry holds the raw byte payload and the timestamp at which it was cached.
@@ -24,7 +24,7 @@ type cacheEntry struct {
 func NewCache(interval time.Duration) Cache {
 	c := Cache{
 		cache: make(map[string]cacheEntry),
-		mux:   &sync.Mutex{},
+		mux:   &sync.RWMutex{},
 	}
 	go c.reapLoop(interval)
 	return c
@@ -37,7 +37,7 @@ func (c *Cache) Add(key string, val []byte) {
 		return
 	}
 	if c.mux == nil {
-		c.mux = &sync.Mutex{}
+		c.mux = &sync.RWMutex{}
 	}
 	c.mux.Lock()
 	defer c.mux.Unlock()
@@ -58,8 +58,9 @@ func (c *Cache) Get(key string) ([]byte, bool) {
 	if c == nil || c.mux == nil {
 		return nil, false
 	}
-	c.mux.Lock()
-	defer c.mux.Unlock()
+	// Use read lock to allow multiple goroutines to read concurrently without contention
+	c.mux.RLock()
+	defer c.mux.RUnlock()
 
 	if c.cache == nil {
 		return nil, false

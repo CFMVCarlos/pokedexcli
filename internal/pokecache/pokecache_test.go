@@ -83,3 +83,14 @@ func TestReapFail(t *testing.T) {
 		return
 	}
 }
+
+func BenchmarkGetParallel(b *testing.B) {
+	cache := NewCache(time.Minute)
+	cache.Add("https://example.com", []byte("testdata"))
+	b.ResetTimer()
+	b.RunParallel(func(pb *testing.PB) {
+		for pb.Next() {
+			_, _ = cache.Get("https://example.com")
+		}
+	})
+}

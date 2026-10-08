@@ -1,3 +1,4 @@
+// Package main serves as the entrypoint for the Pokedex CLI application.
 package main
 
 import (
@@ -7,6 +8,7 @@ import (
 	"pokedexcli/internal/pokecache"
 )
 
+// main initializes application state, the TTL cache, and starts the REPL.
 func main() {
 	fmt.Println("Welcome to the Pokedex!")
 

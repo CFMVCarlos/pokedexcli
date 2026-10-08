@@ -452,12 +452,12 @@ func TestCommandExplore(t *testing.T) {
 						Name string `json:"name"`
 						URL  string `json:"url"`
 					} `json:"version"`
-					MaxChance int `json:"max_chance"`
+					MaxChance        int `json:"max_chance"`
 					EncounterDetails []struct {
-						MinLevel       int `json:"min_level"`
-						MaxLevel       int `json:"max_level"`
-						Chance         int `json:"chance"`
-						Method         struct {
+						MinLevel int `json:"min_level"`
+						MaxLevel int `json:"max_level"`
+						Chance   int `json:"chance"`
+						Method   struct {
 							Name string `json:"name"`
 							URL  string `json:"url"`
 						} `json:"method"`
@@ -815,6 +815,3 @@ func TestCommandPokedex(t *testing.T) {
 		}
 	})
 }
-
-
-

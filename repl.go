@@ -11,6 +11,8 @@ import (
 	"strings"
 )
 
+// StartRepl initiates the interactive read-eval-print loop (REPL), scanning standard input
+// for user commands, parsing arguments, and executing registered callbacks.
 func StartRepl(config *config) {
 	scanner := bufio.NewScanner(os.Stdin)
 
@@ -42,18 +44,21 @@ func StartRepl(config *config) {
 	}
 }
 
+// cleanInput trims outer whitespace and splits the input string into lowercase word tokens.
 func cleanInput(text string) []string {
 	cleanText := strings.TrimSpace(text)
 	words := strings.Fields(strings.ToLower(cleanText))
 	return words
 }
 
+// commandExit terminates the Pokedex CLI application cleanly with exit code 0.
 func commandExit(config *config, args ...string) error {
 	fmt.Println("Closing the Pokedex... Goodbye!")
 	defer os.Exit(0)
 	return nil
 }
 
+// commandHelp displays usage instructions and lists all registered commands with their descriptions.
 func commandHelp(config *config, args ...string) error {
 	fmt.Println()
 	fmt.Println("Welcome to the Pokedex!")
@@ -66,6 +71,7 @@ func commandHelp(config *config, args ...string) error {
 	return nil
 }
 
+// commandMap fetches and displays the next 20 location areas from the PokeAPI.
 func commandMap(config *config, args ...string) error {
 	if config.next == "" {
 		return fmt.Errorf("you're on the last page")
@@ -74,6 +80,7 @@ func commandMap(config *config, args ...string) error {
 	return printLocationAreas(config, config.next)
 }
 
+// commandMapb fetches and displays the previous 20 location areas from the PokeAPI.
 func commandMapb(config *config, args ...string) error {
 	if config.previous == "" {
 		return fmt.Errorf("you're on the first page")
@@ -82,6 +89,8 @@ func commandMapb(config *config, args ...string) error {
 	return printLocationAreas(config, config.previous)
 }
 
+// printLocationAreas retrieves location areas from the given URL (via cache or HTTP),
+// prints the names of the areas, and updates next/previous pagination state.
 func printLocationAreas(config *config, url string) error {
 	var body []byte
 
@@ -126,6 +135,7 @@ func printLocationAreas(config *config, url string) error {
 	return nil
 }
 
+// commandExplore lists all Pokémon that can be encountered within a specified location area.
 func commandExplore(config *config, args ...string) error {
 	if len(args) == 0 {
 		return fmt.Errorf("you must provide a location name")
@@ -166,6 +176,8 @@ func commandExplore(config *config, args ...string) error {
 	return nil
 }
 
+// commandCatch attempts to catch a specified Pokémon, calculating catch probability based
+// on base experience and adding caught Pokémon to the user's Pokédex.
 func commandCatch(config *config, args ...string) error {
 	if len(args) == 0 {
 		return fmt.Errorf("you must provide a pokemon name")
@@ -222,6 +234,8 @@ func commandCatch(config *config, args ...string) error {
 	return nil
 }
 
+// commandInspect prints comprehensive stats, height, weight, and elemental types
+// for a previously captured Pokémon.
 func commandInspect(config *config, args ...string) error {
 	if len(args) == 0 {
 		return fmt.Errorf("you must provide a pokemon name")
@@ -249,6 +263,7 @@ func commandInspect(config *config, args ...string) error {
 	return nil
 }
 
+// commandPokedex lists all Pokémon names that have been captured and saved in the user's Pokédex.
 func commandPokedex(config *config, args ...string) error {
 	fmt.Println("Your Pokedex:")
 	for _, pokemon := range config.pokedex {
@@ -257,6 +272,7 @@ func commandPokedex(config *config, args ...string) error {
 	return nil
 }
 
+// GetCommands creates and returns the registry mapping command names to their cliCommand definitions.
 func GetCommands() map[string]cliCommand {
 	commands := make(map[string]cliCommand)
 

@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"strings"
@@ -77,14 +78,27 @@ func commandMapb(config *config) error {
 }
 
 func printLocationAreas(config *config, url string) error {
-	resp, err := http.Get(url)
-	if err != nil {
-		return err
+	var body []byte
+
+	if val, ok := config.cache.Get(url); ok {
+		body = val
+	} else {
+		resp, err := http.Get(url)
+		if err != nil {
+			return err
+		}
+		defer resp.Body.Close()
+
+		data, err := io.ReadAll(resp.Body)
+		if err != nil {
+			return err
+		}
+		body = data
+		config.cache.Add(url, body)
 	}
-	defer resp.Body.Close()
 
 	var data locationAreaResponse
-	if err := json.NewDecoder(resp.Body).Decode(&data); err != nil {
+	if err := json.Unmarshal(body, &data); err != nil {
 		return err
 	}
 

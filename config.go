@@ -1,5 +1,7 @@
 package main
 
+import "pokedexcli/internal/pokecache"
+
 type cliCommand struct {
 	name        string
 	description string
@@ -9,6 +11,7 @@ type config struct {
 	commands map[string]cliCommand
 	next     string
 	previous string
+	cache    pokecache.Cache
 }
 
 type locationAreaResponse struct {

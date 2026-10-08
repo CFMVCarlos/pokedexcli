@@ -2,6 +2,9 @@ package main
 
 import (
 	"fmt"
+	"time"
+
+	"pokedexcli/internal/pokecache"
 )
 
 func main() {
@@ -11,6 +14,7 @@ func main() {
 		commands: GetCommands(),
 		next:     "https://pokeapi.co/api/v2/location-area",
 		previous: "",
+		cache:    pokecache.NewCache(5 * time.Second),
 	}
 	StartRepl(config)
 }

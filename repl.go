@@ -30,7 +30,11 @@ func StartRepl(config *config) {
 			fmt.Println("Unknown command")
 			continue
 		}
-		err := cmd.callback(config)
+		args := []string{}
+		if len(cleanText) > 1 {
+			args = cleanText[1:]
+		}
+		err := cmd.callback(config, args...)
 		if err != nil {
 			fmt.Println(err)
 		}
@@ -43,13 +47,13 @@ func cleanInput(text string) []string {
 	return words
 }
 
-func commandExit(config *config) error {
+func commandExit(config *config, args ...string) error {
 	fmt.Println("Closing the Pokedex... Goodbye!")
 	defer os.Exit(0)
 	return nil
 }
 
-func commandHelp(config *config) error {
+func commandHelp(config *config, args ...string) error {
 	fmt.Println()
 	fmt.Println("Welcome to the Pokedex!")
 	fmt.Println("Usage:")
@@ -61,7 +65,7 @@ func commandHelp(config *config) error {
 	return nil
 }
 
-func commandMap(config *config) error {
+func commandMap(config *config, args ...string) error {
 	if config.next == "" {
 		return fmt.Errorf("you're on the last page")
 	}
@@ -69,7 +73,7 @@ func commandMap(config *config) error {
 	return printLocationAreas(config, config.next)
 }
 
-func commandMapb(config *config) error {
+func commandMapb(config *config, args ...string) error {
 	if config.previous == "" {
 		return fmt.Errorf("you're on the first page")
 	}
@@ -121,6 +125,46 @@ func printLocationAreas(config *config, url string) error {
 	return nil
 }
 
+func commandExplore(config *config, args ...string) error {
+	if len(args) == 0 {
+		return fmt.Errorf("you must provide a location name")
+	}
+	location := args[0]
+	fmt.Printf("Exploring %s...\n", location)
+
+	fullURL := "https://pokeapi.co/api/v2/location-area/" + location
+	var body []byte
+
+	if val, ok := config.cache.Get(fullURL); ok {
+		body = val
+	} else {
+		req, err := http.Get(fullURL)
+		if err != nil {
+			return err
+		}
+		defer req.Body.Close()
+
+		data, err := io.ReadAll(req.Body)
+		if err != nil {
+			return err
+		}
+		body = data
+		config.cache.Add(fullURL, data)
+	}
+
+	var data LocationArea
+	if err := json.Unmarshal(body, &data); err != nil {
+		return err
+	}
+
+	fmt.Println("Found Pokemon:")
+	for _, pokemonEncounter := range data.PokemonEncounters {
+		fmt.Printf(" - %s\n", pokemonEncounter.Pokemon.Name)
+	}
+
+	return nil
+}
+
 func GetCommands() map[string]cliCommand {
 	commands := make(map[string]cliCommand)
 
@@ -146,6 +190,12 @@ func GetCommands() map[string]cliCommand {
 		name:        "mapb",
 		description: "Displays the previous 20 locations",
 		callback:    commandMapb,
+	}
+
+	commands["explore"] = cliCommand{
+		name:        "explore",
+		description: "Shows all pokemon in a given area",
+		callback:    commandExplore,
 	}
 
 	return commands

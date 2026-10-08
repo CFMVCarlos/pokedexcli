@@ -11,6 +11,9 @@ import (
 	"os/exec"
 	"strings"
 	"testing"
+	"time"
+
+	"pokedexcli/internal/pokecache"
 )
 
 func TestCleanInput(t *testing.T) {
@@ -122,6 +125,12 @@ func TestGetCommands(t *testing.T) {
 			expectFound:  true,
 		},
 		{
+			key:          "explore",
+			expectedName: "explore",
+			expectedDesc: "Shows all pokemon in a given area",
+			expectFound:  true,
+		},
+		{
 			key:         "invalid",
 			expectFound: false,
 		},
@@ -156,8 +165,8 @@ func TestGetCommands(t *testing.T) {
 		})
 	}
 
-	if len(commands) != 4 {
-		t.Errorf("expected exactly 4 commands registered, got %d", len(commands))
+	if len(commands) != 5 {
+		t.Errorf("expected exactly 5 commands registered, got %d", len(commands))
 	}
 }
 
@@ -396,3 +405,111 @@ func TestCommandMapAndMapb(t *testing.T) {
 		}
 	})
 }
+
+func TestCommandExplore(t *testing.T) {
+	t.Run("missing location argument", func(t *testing.T) {
+		cfg := &config{
+			cache: pokecache.NewCache(5 * time.Second),
+		}
+		err := commandExplore(cfg)
+		if err == nil {
+			t.Fatal("expected error when no location argument is provided, got nil")
+		}
+	})
+
+	t.Run("explore reads from cache and displays pokemon", func(t *testing.T) {
+		cfg := &config{
+			cache: pokecache.NewCache(5 * time.Second),
+		}
+
+		mockArea := LocationArea{
+			Name: "test-area",
+			PokemonEncounters: []struct {
+				Pokemon struct {
+					Name string `json:"name"`
+					URL  string `json:"url"`
+				} `json:"pokemon"`
+				VersionDetails []struct {
+					Version struct {
+						Name string `json:"name"`
+						URL  string `json:"url"`
+					} `json:"version"`
+					MaxChance int `json:"max_chance"`
+					EncounterDetails []struct {
+						MinLevel       int `json:"min_level"`
+						MaxLevel       int `json:"max_level"`
+						Chance         int `json:"chance"`
+						Method         struct {
+							Name string `json:"name"`
+							URL  string `json:"url"`
+						} `json:"method"`
+						ConditionValues []struct {
+							Name string `json:"name"`
+							URL  string `json:"url"`
+						} `json:"condition_values"`
+						PokemonDetails *string `json:"pokemon_details"`
+					} `json:"encounter_details"`
+				} `json:"version_details"`
+			}{
+				{
+					Pokemon: struct {
+						Name string `json:"name"`
+						URL  string `json:"url"`
+					}{
+						Name: "pikachu",
+					},
+				},
+				{
+					Pokemon: struct {
+						Name string `json:"name"`
+						URL  string `json:"url"`
+					}{
+						Name: "bulbasaur",
+					},
+				},
+			},
+		}
+
+		data, err := json.Marshal(mockArea)
+		if err != nil {
+			t.Fatalf("failed to marshal mock area: %v", err)
+		}
+
+		url := "https://pokeapi.co/api/v2/location-area/test-area"
+		cfg.cache.Add(url, data)
+
+		oldStdout := os.Stdout
+		r, w, err := os.Pipe()
+		if err != nil {
+			t.Fatalf("failed to create pipe: %v", err)
+		}
+		os.Stdout = w
+
+		callErr := commandExplore(cfg, "test-area")
+
+		w.Close()
+		os.Stdout = oldStdout
+
+		var buf bytes.Buffer
+		_, _ = io.Copy(&buf, r)
+		r.Close()
+
+		if callErr != nil {
+			t.Fatalf("commandExplore returned error: %v", callErr)
+		}
+
+		output := buf.String()
+		expectedSubstrings := []string{
+			"Exploring test-area...",
+			"Found Pokemon:",
+			"- pikachu",
+			"- bulbasaur",
+		}
+		for _, sub := range expectedSubstrings {
+			if !strings.Contains(output, sub) {
+				t.Errorf("expected output to contain %q, got: %q", sub, output)
+			}
+		}
+	})
+}
+

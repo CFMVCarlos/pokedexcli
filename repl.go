@@ -346,6 +346,25 @@ func commandLoad(config *config, args ...string) error {
 	return nil
 }
 
+// commandRelease removes a caught Pokémon from the Pokédex and releases it back into the wild.
+func commandRelease(config *config, args ...string) error {
+	if len(args) == 0 {
+		return fmt.Errorf("you must provide a pokemon name")
+	}
+	pokemonName := strings.ToLower(args[0])
+
+	pokemon, exists := config.pokedex[pokemonName]
+	if !exists {
+		fmt.Println("you have not caught that pokemon")
+		return nil
+	}
+
+	delete(config.pokedex, pokemonName)
+	_ = savePokedex(config)
+	fmt.Printf("Bye bye, %s! %s was released back into the wild.\n", pokemon.Name, pokemon.Name)
+	return nil
+}
+
 // GetCommands creates and returns the registry mapping command names to their cliCommand definitions.
 func GetCommands() map[string]cliCommand {
 	commands := make(map[string]cliCommand)
@@ -408,6 +427,12 @@ func GetCommands() map[string]cliCommand {
 		name:        "load",
 		description: "Load your Pokédex from disk",
 		callback:    commandLoad,
+	}
+
+	commands["release"] = cliCommand{
+		name:        "release",
+		description: "Release a caught pokemon back into the wild",
+		callback:    commandRelease,
 	}
 
 	return commands

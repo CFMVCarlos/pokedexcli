@@ -161,6 +161,12 @@ func TestGetCommands(t *testing.T) {
 			expectFound:  true,
 		},
 		{
+			key:          "release",
+			expectedName: "release",
+			expectedDesc: "Release a caught pokemon back into the wild",
+			expectFound:  true,
+		},
+		{
 			key:         "invalid",
 			expectFound: false,
 		},
@@ -195,8 +201,8 @@ func TestGetCommands(t *testing.T) {
 		})
 	}
 
-	if len(commands) != 10 {
-		t.Errorf("expected exactly 10 commands registered, got %d", len(commands))
+	if len(commands) != 11 {
+		t.Errorf("expected exactly 11 commands registered, got %d", len(commands))
 	}
 }
 
@@ -879,4 +885,87 @@ func filepathJoinNonExistent() string {
 func filepathSafeNonExistent() string {
 	return "/tmp/non-existent-pokedex-12345.json"
 }
+
+func TestCommandRelease(t *testing.T) {
+	t.Run("missing pokemon name argument", func(t *testing.T) {
+		cfg := &config{
+			pokedex: make(map[string]Pokemon),
+		}
+		err := commandRelease(cfg)
+		if err == nil {
+			t.Fatal("expected error when no pokemon argument is provided, got nil")
+		}
+	})
+
+	t.Run("release uncaught pokemon", func(t *testing.T) {
+		cfg := &config{
+			pokedex: make(map[string]Pokemon),
+		}
+
+		oldStdout := os.Stdout
+		r, w, err := os.Pipe()
+		if err != nil {
+			t.Fatalf("failed to create pipe: %v", err)
+		}
+		os.Stdout = w
+
+		callErr := commandRelease(cfg, "charizard")
+
+		w.Close()
+		os.Stdout = oldStdout
+
+		var buf bytes.Buffer
+		_, _ = io.Copy(&buf, r)
+		r.Close()
+
+		if callErr != nil {
+			t.Fatalf("unexpected error: %v", callErr)
+		}
+
+		output := buf.String()
+		expected := "you have not caught that pokemon"
+		if !strings.Contains(output, expected) {
+			t.Errorf("expected output to contain %q, got: %q", expected, output)
+		}
+	})
+
+	t.Run("release caught pokemon successfully", func(t *testing.T) {
+		cfg := &config{
+			pokedex: map[string]Pokemon{
+				"charizard": {Name: "charizard"},
+			},
+		}
+
+		oldStdout := os.Stdout
+		r, w, err := os.Pipe()
+		if err != nil {
+			t.Fatalf("failed to create pipe: %v", err)
+		}
+		os.Stdout = w
+
+		callErr := commandRelease(cfg, "charizard")
+
+		w.Close()
+		os.Stdout = oldStdout
+
+		var buf bytes.Buffer
+		_, _ = io.Copy(&buf, r)
+		r.Close()
+
+		if callErr != nil {
+			t.Fatalf("unexpected error: %v", callErr)
+		}
+
+		output := buf.String()
+		expected := "Bye bye, charizard! charizard was released back into the wild."
+		if !strings.Contains(output, expected) {
+			t.Errorf("expected output to contain %q, got: %q", expected, output)
+		}
+
+		if _, exists := cfg.pokedex["charizard"]; exists {
+			t.Errorf("charizard should have been removed from pokedex")
+		}
+	})
+}
+
 

@@ -1213,7 +1213,3 @@ func TestCommandFilter(t *testing.T) {
 		}
 	})
 }
-
-
-
-

@@ -63,4 +63,5 @@ func TestColorType(t *testing.T) {
 		}
 	}
 }
+
 const colorGreenCode = "\033[32m"

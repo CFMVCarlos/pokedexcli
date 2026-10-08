@@ -19,11 +19,16 @@
 ## ⚡ Features
 
 - 🎮 **Interactive REPL Loop:** Fast, intuitive command prompt with input sanitization and command routing.
+- 🎨 **Zero-Dependency ANSI Colors:** Vibrant color styling for prompts, elemental types, catches, and escapes (respects `NO_COLOR`).
+- 💾 **Persistent Pokédex Storage:** Automatically persists caught and released Pokémon to `pokedex.json` with manual `save` and `load` support.
 - 🗺️ **World & Area Navigation:** Paginated exploration of Pokémon location areas (`map` / `mapb`).
 - 🔍 **Area Exploration:** Discover all Pokémon native to a specific location area (`explore`).
 - 🎯 **Catch Mechanics:** Realistic catch probability scaled dynamically against a Pokémon's `base_experience` (`catch`).
 - 📊 **Detailed Inspection:** View captured Pokémon attributes, including height, weight, base stats, and types (`inspect`).
 - 📖 **Pokédex Ledger:** Real-time inventory tracking of all captured Pokémon (`pokedex`).
+- 👋 **Pokémon Release:** Release captured Pokémon back into the wild (`release`).
+- 📈 **Trainer Summary:** Detailed analytics including total caught, heaviest, tallest, favorite type, and type distribution (`summary`).
+- 🏷️ **Elemental Type Filter:** Quickly filter your caught collection by Pokémon type (`filter`).
 - ⚡ **Thread-Safe In-Memory Cache:** Custom `pokecache` package with background goroutine reaping based on configurable TTL intervals to minimize redundant network requests.
 
 ---
@@ -66,6 +71,11 @@ When launched, the program starts the `Pokedex > ` interactive prompt.
 | `catch` | `<pokemon_name>` | Attempts to catch a Pokémon and adds it to your Pokédex | `catch pikachu` |
 | `inspect` | `<pokemon_name>` | Displays stats, dimensions, and types of a caught Pokémon | `inspect pikachu` |
 | `pokedex` | _None_ | Prints a list of all caught Pokémon in your Pokédex | `pokedex` |
+| `release` | `<pokemon_name>` | Releases a caught Pokémon back into the wild | `release pikachu` |
+| `summary` | _None_ | Displays trainer stats, records, and type breakdown | `summary` |
+| `filter` | `<type_name>` | Lists all caught Pokémon matching the specified type | `filter water` |
+| `save` | _None_ | Manually saves the Pokédex to disk | `save` |
+| `load` | _None_ | Manually reloads the Pokédex from disk | `load` |
 
 ### Example Session
 
@@ -103,9 +113,21 @@ Stats:
 Types:
   - water
 
-Pokedex > pokedex
-Your Pokedex:
+Pokedex > summary
+--- Trainer Summary ---
+Total Pokémon caught: 1
+Heaviest Pokémon: remoraid (120)
+Tallest Pokémon: remoraid (6)
+Favorite Type: water (1)
+Type Breakdown:
+  - water: 1
+
+Pokedex > filter water
+Water Pokémon in your Pokédex:
  - remoraid
+
+Pokedex > release remoraid
+Bye bye, remoraid! remoraid was released back into the wild.
 
 Pokedex > exit
 Closing the Pokedex... Goodbye!
@@ -119,6 +141,8 @@ Closing the Pokedex... Goodbye!
 pokedexcli/
 ├── main.go                     # Application entrypoint & dependency setup
 ├── config.go                   # State types (config, cliCommand, Pokemon, LocationArea)
+├── colors.go                   # Zero-dependency ANSI terminal color formatting
+├── colors_test.go              # Unit tests for ANSI styling and NO_COLOR support
 ├── repl.go                     # REPL input scanner, dispatch loop, and command handlers
 ├── repl_test.go                # Comprehensive unit test suite for REPL and commands
 ├── internal/
@@ -132,8 +156,9 @@ pokedexcli/
 ### Technical Highlights
 
 - **`pokecache.Cache`**: Uses `sync.Mutex` to protect the underlying map against data races. A background goroutine (`time.NewTicker`) reaps expired entries based on a configurable interval.
+- **Persistence Layer**: Auto-saves on catch and release, while offering explicit `save` and `load` commands.
 - **Dynamic Catch Rates**: Employs `math/rand` against Pokémon `base_experience` to balance encounter difficulty.
-- **Standard Library Only**: Built cleanly using Go's standard library (`net/http`, `sync`, `time`, `encoding/json`, `bufio`, `strings`, `math/rand`).
+- **Standard Library Only**: Built cleanly using Go's standard library (`net/http`, `sync`, `time`, `encoding/json`, `bufio`, `strings`, `math/rand`, `os`).
 
 ---
 

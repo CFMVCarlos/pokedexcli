@@ -131,6 +131,12 @@ func TestGetCommands(t *testing.T) {
 			expectFound:  true,
 		},
 		{
+			key:          "catch",
+			expectedName: "catch",
+			expectedDesc: "Attempt to catch a pokemon",
+			expectFound:  true,
+		},
+		{
 			key:         "invalid",
 			expectFound: false,
 		},
@@ -165,8 +171,8 @@ func TestGetCommands(t *testing.T) {
 		})
 	}
 
-	if len(commands) != 5 {
-		t.Errorf("expected exactly 5 commands registered, got %d", len(commands))
+	if len(commands) != 6 {
+		t.Errorf("expected exactly 6 commands registered, got %d", len(commands))
 	}
 }
 
@@ -509,6 +515,75 @@ func TestCommandExplore(t *testing.T) {
 			if !strings.Contains(output, sub) {
 				t.Errorf("expected output to contain %q, got: %q", sub, output)
 			}
+		}
+	})
+}
+
+func TestCommandCatch(t *testing.T) {
+	t.Run("missing pokemon name argument", func(t *testing.T) {
+		cfg := &config{
+			cache: pokecache.NewCache(5 * time.Second),
+		}
+		err := commandCatch(cfg)
+		if err == nil {
+			t.Fatal("expected error when no pokemon argument is provided, got nil")
+		}
+	})
+
+	t.Run("catch with mocked cached pokemon", func(t *testing.T) {
+		cfg := &config{
+			cache:   pokecache.NewCache(5 * time.Second),
+			pokedex: make(map[string]Pokemon),
+		}
+
+		mockPokemon := Pokemon{
+			ID:             25,
+			Name:           "pikachu",
+			BaseExperience: 50,
+			Height:         4,
+			Weight:         60,
+		}
+
+		data, err := json.Marshal(mockPokemon)
+		if err != nil {
+			t.Fatalf("failed to marshal mock pokemon: %v", err)
+		}
+
+		url := "https://pokeapi.co/api/v2/pokemon/pikachu"
+		cfg.cache.Add(url, data)
+
+		oldStdout := os.Stdout
+		r, w, err := os.Pipe()
+		if err != nil {
+			t.Fatalf("failed to create pipe: %v", err)
+		}
+		os.Stdout = w
+
+		callErr := commandCatch(cfg, "pikachu")
+
+		w.Close()
+		os.Stdout = oldStdout
+
+		var buf bytes.Buffer
+		_, _ = io.Copy(&buf, r)
+		r.Close()
+
+		if callErr != nil {
+			t.Fatalf("commandCatch returned unexpected error: %v", callErr)
+		}
+
+		output := buf.String()
+		expectedPrefix := "Throwing a Pokeball at pikachu..."
+		if !strings.Contains(output, expectedPrefix) {
+			t.Errorf("expected output to contain %q, got: %q", expectedPrefix, output)
+		}
+
+		if strings.Contains(output, "pikachu was caught!") {
+			if _, exists := cfg.pokedex["pikachu"]; !exists {
+				t.Errorf("pikachu was reported caught but not found in pokedex")
+			}
+		} else if !strings.Contains(output, "pikachu escaped!") {
+			t.Errorf("output must contain either caught or escaped message, got: %q", output)
 		}
 	})
 }

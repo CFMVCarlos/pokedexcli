@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"math/rand"
 	"net/http"
 	"os"
 	"strings"
@@ -165,6 +166,61 @@ func commandExplore(config *config, args ...string) error {
 	return nil
 }
 
+func commandCatch(config *config, args ...string) error {
+	if len(args) == 0 {
+		return fmt.Errorf("you must provide a pokemon name")
+	}
+	pokemonName := strings.ToLower(args[0])
+	fmt.Printf("Throwing a Pokeball at %s...\n", pokemonName)
+
+	fullURL := "https://pokeapi.co/api/v2/pokemon/" + pokemonName
+	var body []byte
+
+	if val, ok := config.cache.Get(fullURL); ok {
+		body = val
+	} else {
+		req, err := http.Get(fullURL)
+		if err != nil {
+			return err
+		}
+		defer req.Body.Close()
+
+		if req.StatusCode > 299 {
+			return fmt.Errorf("failed to find pokemon: %s", req.Status)
+		}
+
+		data, err := io.ReadAll(req.Body)
+		if err != nil {
+			return err
+		}
+		body = data
+		config.cache.Add(fullURL, data)
+	}
+
+	var pokemon Pokemon
+	if err := json.Unmarshal(body, &pokemon); err != nil {
+		return err
+	}
+
+	baseExp := pokemon.BaseExperience
+	if baseExp <= 0 {
+		baseExp = 1
+	}
+
+	res := rand.Intn(baseExp)
+	if res < 40 {
+		fmt.Printf("%s was caught!\n", pokemon.Name)
+		if config.pokedex == nil {
+			config.pokedex = make(map[string]Pokemon)
+		}
+		config.pokedex[pokemon.Name] = pokemon
+	} else {
+		fmt.Printf("%s escaped!\n", pokemon.Name)
+	}
+
+	return nil
+}
+
 func GetCommands() map[string]cliCommand {
 	commands := make(map[string]cliCommand)
 
@@ -196,6 +252,12 @@ func GetCommands() map[string]cliCommand {
 		name:        "explore",
 		description: "Shows all pokemon in a given area",
 		callback:    commandExplore,
+	}
+
+	commands["catch"] = cliCommand{
+		name:        "catch",
+		description: "Attempt to catch a pokemon",
+		callback:    commandCatch,
 	}
 
 	return commands

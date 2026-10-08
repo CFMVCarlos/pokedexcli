@@ -12,22 +12,22 @@ func TestColorize(t *testing.T) {
 
 	text := "pikachu"
 	green := colorGreen(text)
-	if !strings.Contains(green, colorGreenCode) && !strings.Contains(green, "\033[32m") {
+	if !strings.Contains(green, ansiGreen) {
 		t.Errorf("expected green ANSI code in %q", green)
 	}
 
 	yellow := colorYellow(text)
-	if !strings.Contains(yellow, "\033[33m") {
+	if !strings.Contains(yellow, ansiYellow) {
 		t.Errorf("expected yellow ANSI code in %q", yellow)
 	}
 
 	red := colorRed(text)
-	if !strings.Contains(red, "\033[31m") {
+	if !strings.Contains(red, ansiRed) {
 		t.Errorf("expected red ANSI code in %q", red)
 	}
 
 	cyan := colorCyan(text)
-	if !strings.Contains(cyan, "\033[36m") {
+	if !strings.Contains(cyan, ansiCyan) {
 		t.Errorf("expected cyan ANSI code in %q", cyan)
 	}
 
@@ -47,13 +47,25 @@ func TestColorType(t *testing.T) {
 		typeName     string
 		expectedCode string
 	}{
-		{"fire", "\033[31m"},
-		{"water", "\033[34m"},
-		{"grass", "\033[32m"},
-		{"electric", "\033[33m"},
-		{"ice", "\033[36m"},
-		{"poison", "\033[35m"},
-		{"normal", "\033[0m"},
+		{"normal", ansiWhite},
+		{"fire", ansiBrightRed},
+		{"water", ansiBrightBlue},
+		{"grass", ansiBrightGreen},
+		{"electric", ansiBrightYellow},
+		{"ice", ansiBrightCyan},
+		{"fighting", ansiRed},
+		{"poison", ansiMagenta},
+		{"ground", ansiYellow},
+		{"flying", ansiCyan},
+		{"psychic", ansiBrightMagenta},
+		{"bug", ansiGreen},
+		{"rock", ansiYellow},
+		{"ghost", ansiMagenta},
+		{"dragon", ansiBlue},
+		{"steel", ansiBrightWhite},
+		{"dark", ansiBrightBlack},
+		{"fairy", ansiBrightMagenta},
+		{"unknown-custom", ansiReset},
 	}
 
 	for _, tc := range types {
@@ -63,5 +75,3 @@ func TestColorType(t *testing.T) {
 		}
 	}
 }
-
-const colorGreenCode = "\033[32m"

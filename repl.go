@@ -17,7 +17,9 @@ func StartRepl(config *config) {
 	if config.pokedex == nil {
 		config.pokedex = make(map[string]Pokemon)
 	}
-	_ = loadPokedex(config)
+	if err := loadPokedex(config); err != nil {
+		fmt.Fprintln(os.Stderr, colorYellow(fmt.Sprintf("Warning: could not load existing Pokédex: %v", err)))
+	}
 	scanner := bufio.NewScanner(os.Stdin)
 
 	for {
@@ -234,7 +236,9 @@ func commandCatch(config *config, args ...string) error {
 			config.pokedex = make(map[string]Pokemon)
 		}
 		config.pokedex[pokemon.Name] = pokemon
-		_ = savePokedex(config)
+		if err := savePokedex(config); err != nil {
+			fmt.Fprintln(os.Stderr, colorYellow(fmt.Sprintf("Warning: failed to auto-save Pokédex: %v", err)))
+		}
 	} else {
 		fmt.Println(colorYellow(fmt.Sprintf("%s escaped!", pokemon.Name)))
 	}
@@ -360,7 +364,9 @@ func commandRelease(config *config, args ...string) error {
 	}
 
 	delete(config.pokedex, pokemonName)
-	_ = savePokedex(config)
+	if err := savePokedex(config); err != nil {
+		fmt.Fprintln(os.Stderr, colorYellow(fmt.Sprintf("Warning: failed to auto-save Pokédex: %v", err)))
+	}
 	fmt.Println(colorYellow(fmt.Sprintf("Bye bye, %s! %s was released back into the wild.", pokemon.Name, pokemon.Name)))
 	return nil
 }

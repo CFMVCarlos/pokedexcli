@@ -21,7 +21,7 @@ func StartRepl(config *config) {
 	scanner := bufio.NewScanner(os.Stdin)
 
 	for {
-		fmt.Print("Pokedex > ")
+		fmt.Print(colorCyan("Pokedex > "))
 		if !scanner.Scan() {
 			break
 		}
@@ -228,7 +228,7 @@ func commandCatch(config *config, args ...string) error {
 
 	res := rand.Intn(baseExp)
 	if res < 40 {
-		fmt.Printf("%s was caught!\n", pokemon.Name)
+		fmt.Println(colorGreen(fmt.Sprintf("%s was caught!", pokemon.Name)))
 		fmt.Println("You may now inspect it with the inspect command.")
 		if config.pokedex == nil {
 			config.pokedex = make(map[string]Pokemon)
@@ -236,7 +236,7 @@ func commandCatch(config *config, args ...string) error {
 		config.pokedex[pokemon.Name] = pokemon
 		_ = savePokedex(config)
 	} else {
-		fmt.Printf("%s escaped!\n", pokemon.Name)
+		fmt.Println(colorYellow(fmt.Sprintf("%s escaped!", pokemon.Name)))
 	}
 
 	return nil
@@ -265,7 +265,7 @@ func commandInspect(config *config, args ...string) error {
 	}
 	fmt.Println("Types:")
 	for _, t := range pokemon.Types {
-		fmt.Printf("  - %s\n", t.Type.Name)
+		fmt.Printf("  - %s\n", colorType(t.Type.Name))
 	}
 
 	return nil
@@ -361,7 +361,7 @@ func commandRelease(config *config, args ...string) error {
 
 	delete(config.pokedex, pokemonName)
 	_ = savePokedex(config)
-	fmt.Printf("Bye bye, %s! %s was released back into the wild.\n", pokemon.Name, pokemon.Name)
+	fmt.Println(colorYellow(fmt.Sprintf("Bye bye, %s! %s was released back into the wild.", pokemon.Name, pokemon.Name)))
 	return nil
 }
 

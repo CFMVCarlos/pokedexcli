@@ -16,6 +16,11 @@ import (
 	"pokedexcli/internal/pokecache"
 )
 
+func TestMain(m *testing.M) {
+	SetColorEnabled(false)
+	os.Exit(m.Run())
+}
+
 func TestCleanInput(t *testing.T) {
 	cases := []struct {
 		name     string

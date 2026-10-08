@@ -185,7 +185,7 @@ func commandCatch(config *config, args ...string) error {
 		}
 		defer req.Body.Close()
 
-		if req.StatusCode > 299 {
+		if req.StatusCode != http.StatusOK {
 			return fmt.Errorf("failed to find pokemon: %s", req.Status)
 		}
 
@@ -216,6 +216,33 @@ func commandCatch(config *config, args ...string) error {
 		config.pokedex[pokemon.Name] = pokemon
 	} else {
 		fmt.Printf("%s escaped!\n", pokemon.Name)
+	}
+
+	return nil
+}
+
+func commandInspect(config *config, args ...string) error {
+	if len(args) == 0 {
+		return fmt.Errorf("you must provide a pokemon name")
+	}
+	pokemonName := strings.ToLower(args[0])
+
+	pokemon, exists := config.pokedex[pokemonName]
+	if !exists {
+		fmt.Println("you have not caught that pokemon")
+		return nil
+	}
+
+	fmt.Printf("Name: %s\n", pokemon.Name)
+	fmt.Printf("Height: %d\n", pokemon.Height)
+	fmt.Printf("Weight: %d\n", pokemon.Weight)
+	fmt.Println("Stats:")
+	for _, s := range pokemon.Stats {
+		fmt.Printf("  -%s: %d\n", s.Stat.Name, s.BaseStat)
+	}
+	fmt.Println("Types:")
+	for _, t := range pokemon.Types {
+		fmt.Printf("  - %s\n", t.Type.Name)
 	}
 
 	return nil
@@ -258,6 +285,12 @@ func GetCommands() map[string]cliCommand {
 		name:        "catch",
 		description: "Attempt to catch a pokemon",
 		callback:    commandCatch,
+	}
+
+	commands["inspect"] = cliCommand{
+		name:        "inspect",
+		description: "View details about a caught pokemon",
+		callback:    commandInspect,
 	}
 
 	return commands

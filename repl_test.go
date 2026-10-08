@@ -137,6 +137,12 @@ func TestGetCommands(t *testing.T) {
 			expectFound:  true,
 		},
 		{
+			key:          "inspect",
+			expectedName: "inspect",
+			expectedDesc: "View details about a caught pokemon",
+			expectFound:  true,
+		},
+		{
 			key:         "invalid",
 			expectFound: false,
 		},
@@ -171,8 +177,8 @@ func TestGetCommands(t *testing.T) {
 		})
 	}
 
-	if len(commands) != 6 {
-		t.Errorf("expected exactly 6 commands registered, got %d", len(commands))
+	if len(commands) != 7 {
+		t.Errorf("expected exactly 7 commands registered, got %d", len(commands))
 	}
 }
 
@@ -587,4 +593,147 @@ func TestCommandCatch(t *testing.T) {
 		}
 	})
 }
+
+func TestCommandInspect(t *testing.T) {
+	t.Run("missing pokemon name argument", func(t *testing.T) {
+		cfg := &config{
+			pokedex: make(map[string]Pokemon),
+		}
+		err := commandInspect(cfg)
+		if err == nil {
+			t.Fatal("expected error when no pokemon argument is provided, got nil")
+		}
+	})
+
+	t.Run("uncaught pokemon", func(t *testing.T) {
+		cfg := &config{
+			pokedex: make(map[string]Pokemon),
+		}
+
+		oldStdout := os.Stdout
+		r, w, err := os.Pipe()
+		if err != nil {
+			t.Fatalf("failed to create pipe: %v", err)
+		}
+		os.Stdout = w
+
+		callErr := commandInspect(cfg, "pidgey")
+
+		w.Close()
+		os.Stdout = oldStdout
+
+		var buf bytes.Buffer
+		_, _ = io.Copy(&buf, r)
+		r.Close()
+
+		if callErr != nil {
+			t.Fatalf("unexpected error: %v", callErr)
+		}
+
+		output := buf.String()
+		expected := "you have not caught that pokemon"
+		if !strings.Contains(output, expected) {
+			t.Errorf("expected output to contain %q, got: %q", expected, output)
+		}
+	})
+
+	t.Run("caught pokemon displays details", func(t *testing.T) {
+		cfg := &config{
+			pokedex: make(map[string]Pokemon),
+		}
+
+		pokemon := Pokemon{
+			ID:     16,
+			Name:   "pidgey",
+			Height: 3,
+			Weight: 18,
+		}
+		pokemon.Stats = []struct {
+			BaseStat int `json:"base_stat"`
+			Effort   int `json:"effort"`
+			Stat     struct {
+				Name string `json:"name"`
+				URL  string `json:"url"`
+			} `json:"stat"`
+		}{
+			{
+				BaseStat: 40,
+				Stat: struct {
+					Name string `json:"name"`
+					URL  string `json:"url"`
+				}{Name: "hp"},
+			},
+			{
+				BaseStat: 45,
+				Stat: struct {
+					Name string `json:"name"`
+					URL  string `json:"url"`
+				}{Name: "attack"},
+			},
+		}
+		pokemon.Types = []struct {
+			Slot int `json:"slot"`
+			Type struct {
+				Name string `json:"name"`
+				URL  string `json:"url"`
+			} `json:"type"`
+		}{
+			{
+				Slot: 1,
+				Type: struct {
+					Name string `json:"name"`
+					URL  string `json:"url"`
+				}{Name: "normal"},
+			},
+			{
+				Slot: 2,
+				Type: struct {
+					Name string `json:"name"`
+					URL  string `json:"url"`
+				}{Name: "flying"},
+			},
+		}
+
+		cfg.pokedex["pidgey"] = pokemon
+
+		oldStdout := os.Stdout
+		r, w, err := os.Pipe()
+		if err != nil {
+			t.Fatalf("failed to create pipe: %v", err)
+		}
+		os.Stdout = w
+
+		callErr := commandInspect(cfg, "pidgey")
+
+		w.Close()
+		os.Stdout = oldStdout
+
+		var buf bytes.Buffer
+		_, _ = io.Copy(&buf, r)
+		r.Close()
+
+		if callErr != nil {
+			t.Fatalf("unexpected error: %v", callErr)
+		}
+
+		output := buf.String()
+		expectedStrings := []string{
+			"Name: pidgey",
+			"Height: 3",
+			"Weight: 18",
+			"Stats:",
+			"  -hp: 40",
+			"  -attack: 45",
+			"Types:",
+			"  - normal",
+			"  - flying",
+		}
+		for _, exp := range expectedStrings {
+			if !strings.Contains(output, exp) {
+				t.Errorf("expected output to contain %q, but got: %q", exp, output)
+			}
+		}
+	})
+}
+
 

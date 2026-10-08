@@ -210,6 +210,7 @@ func commandCatch(config *config, args ...string) error {
 	res := rand.Intn(baseExp)
 	if res < 40 {
 		fmt.Printf("%s was caught!\n", pokemon.Name)
+		fmt.Println("You may now inspect it with the inspect command.")
 		if config.pokedex == nil {
 			config.pokedex = make(map[string]Pokemon)
 		}
@@ -245,6 +246,14 @@ func commandInspect(config *config, args ...string) error {
 		fmt.Printf("  - %s\n", t.Type.Name)
 	}
 
+	return nil
+}
+
+func commandPokedex(config *config, args ...string) error {
+	fmt.Println("Your Pokedex:")
+	for _, pokemon := range config.pokedex {
+		fmt.Printf(" - %s\n", pokemon.Name)
+	}
 	return nil
 }
 
@@ -291,6 +300,12 @@ func GetCommands() map[string]cliCommand {
 		name:        "inspect",
 		description: "View details about a caught pokemon",
 		callback:    commandInspect,
+	}
+
+	commands["pokedex"] = cliCommand{
+		name:        "pokedex",
+		description: "List all caught pokemon",
+		callback:    commandPokedex,
 	}
 
 	return commands

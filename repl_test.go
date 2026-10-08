@@ -143,6 +143,12 @@ func TestGetCommands(t *testing.T) {
 			expectFound:  true,
 		},
 		{
+			key:          "pokedex",
+			expectedName: "pokedex",
+			expectedDesc: "List all caught pokemon",
+			expectFound:  true,
+		},
+		{
 			key:         "invalid",
 			expectFound: false,
 		},
@@ -177,8 +183,8 @@ func TestGetCommands(t *testing.T) {
 		})
 	}
 
-	if len(commands) != 7 {
-		t.Errorf("expected exactly 7 commands registered, got %d", len(commands))
+	if len(commands) != 8 {
+		t.Errorf("expected exactly 8 commands registered, got %d", len(commands))
 	}
 }
 
@@ -735,5 +741,80 @@ func TestCommandInspect(t *testing.T) {
 		}
 	})
 }
+
+func TestCommandPokedex(t *testing.T) {
+	t.Run("empty pokedex", func(t *testing.T) {
+		cfg := &config{
+			pokedex: make(map[string]Pokemon),
+		}
+
+		oldStdout := os.Stdout
+		r, w, err := os.Pipe()
+		if err != nil {
+			t.Fatalf("failed to create pipe: %v", err)
+		}
+		os.Stdout = w
+
+		callErr := commandPokedex(cfg)
+
+		w.Close()
+		os.Stdout = oldStdout
+
+		var buf bytes.Buffer
+		_, _ = io.Copy(&buf, r)
+		r.Close()
+
+		if callErr != nil {
+			t.Fatalf("unexpected error: %v", callErr)
+		}
+
+		output := buf.String()
+		if !strings.Contains(output, "Your Pokedex:") {
+			t.Errorf("expected output to contain 'Your Pokedex:', got: %q", output)
+		}
+	})
+
+	t.Run("pokedex with caught pokemon", func(t *testing.T) {
+		cfg := &config{
+			pokedex: map[string]Pokemon{
+				"pidgey":   {Name: "pidgey"},
+				"caterpie": {Name: "caterpie"},
+			},
+		}
+
+		oldStdout := os.Stdout
+		r, w, err := os.Pipe()
+		if err != nil {
+			t.Fatalf("failed to create pipe: %v", err)
+		}
+		os.Stdout = w
+
+		callErr := commandPokedex(cfg)
+
+		w.Close()
+		os.Stdout = oldStdout
+
+		var buf bytes.Buffer
+		_, _ = io.Copy(&buf, r)
+		r.Close()
+
+		if callErr != nil {
+			t.Fatalf("unexpected error: %v", callErr)
+		}
+
+		output := buf.String()
+		expectedStrings := []string{
+			"Your Pokedex:",
+			" - pidgey",
+			" - caterpie",
+		}
+		for _, exp := range expectedStrings {
+			if !strings.Contains(output, exp) {
+				t.Errorf("expected output to contain %q, got: %q", exp, output)
+			}
+		}
+	})
+}
+
 
 

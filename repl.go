@@ -365,6 +365,63 @@ func commandRelease(config *config, args ...string) error {
 	return nil
 }
 
+// commandSummary displays overall trainer statistics and collection metrics.
+func commandSummary(config *config, args ...string) error {
+	total := len(config.pokedex)
+	fmt.Println(colorCyan("--- Trainer Summary ---"))
+	fmt.Printf("Total Pokémon caught: %d\n", total)
+	if total == 0 {
+		fmt.Println("Catch some Pokémon first to view your statistics!")
+		return nil
+	}
+
+	var heaviest Pokemon
+	var tallest Pokemon
+	typeCounts := make(map[string]int)
+
+	first := true
+	for _, p := range config.pokedex {
+		if first {
+			heaviest = p
+			tallest = p
+			first = false
+		} else {
+			if p.Weight > heaviest.Weight {
+				heaviest = p
+			}
+			if p.Height > tallest.Height {
+				tallest = p
+			}
+		}
+
+		for _, t := range p.Types {
+			typeCounts[t.Type.Name]++
+		}
+	}
+
+	fmt.Printf("Heaviest Pokémon: %s (%d)\n", heaviest.Name, heaviest.Weight)
+	fmt.Printf("Tallest Pokémon: %s (%d)\n", tallest.Name, tallest.Height)
+
+	var favType string
+	maxCount := 0
+	for t, count := range typeCounts {
+		if count > maxCount {
+			maxCount = count
+			favType = t
+		}
+	}
+	if favType != "" {
+		fmt.Printf("Favorite Type: %s (%d)\n", colorType(favType), maxCount)
+	}
+
+	fmt.Println("Type Breakdown:")
+	for t, count := range typeCounts {
+		fmt.Printf("  - %s: %d\n", colorType(t), count)
+	}
+
+	return nil
+}
+
 // GetCommands creates and returns the registry mapping command names to their cliCommand definitions.
 func GetCommands() map[string]cliCommand {
 	commands := make(map[string]cliCommand)
@@ -433,6 +490,12 @@ func GetCommands() map[string]cliCommand {
 		name:        "release",
 		description: "Release a caught pokemon back into the wild",
 		callback:    commandRelease,
+	}
+
+	commands["summary"] = cliCommand{
+		name:        "summary",
+		description: "Display trainer statistics and collection overview",
+		callback:    commandSummary,
 	}
 
 	return commands

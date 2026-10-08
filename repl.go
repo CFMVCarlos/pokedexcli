@@ -42,6 +42,9 @@ func StartRepl(config *config) {
 			fmt.Println(err)
 		}
 	}
+	if err := scanner.Err(); err != nil {
+		fmt.Fprintln(os.Stderr, "Error reading input:", err)
+	}
 }
 
 // cleanInput trims outer whitespace and splits the input string into lowercase word tokens.

@@ -1,0 +1,2611 @@
+diff --git a/internal/cli/commands.go b/internal/cli/commands.go
+new file mode 100644
+index 0000000..6fa88ab
+--- /dev/null
++++ b/internal/cli/commands.go
+@@ -0,0 +1,251 @@
++package cli
++
++import (
++	"fmt"
++	"math/rand"
++	"os"
++	"strings"
++
++	"pokedexcli/internal/pokeapi"
++	"pokedexcli/internal/ui"
++)
++
++func commandExit(config *Config, args ...string) error {
++	fmt.Println("Closing the Pokedex... Goodbye!")
++	os.Exit(0)
++	return nil
++}
++
++func commandHelp(config *Config, args ...string) error {
++	fmt.Println("\nWelcome to the Pokedex!\nUsage:")
++	for _, cmd := range config.Commands {
++		fmt.Printf("%s: %s\n", cmd.Name, cmd.Description)
++	}
++	fmt.Println()
++	return nil
++}
++
++func commandMap(config *Config, args ...string) error {
++	if config.Next == nil && config.Previous != nil {
++		return fmt.Errorf("you're on the last page")
++	}
++	return fetchAndPrintLocationAreas(config, config.Next)
++}
++
++func commandMapb(config *Config, args ...string) error {
++	if config.Previous == nil {
++		return fmt.Errorf("you're on the first page")
++	}
++	return fetchAndPrintLocationAreas(config, config.Previous)
++}
++
++func fetchAndPrintLocationAreas(config *Config, pageURL *string) error {
++	spinner := ui.NewSpinner("Fetching map data...")
++	spinner.Start()
++	resp, err := config.Client.GetLocationAreas(pageURL)
++	spinner.Stop()
++	if err != nil {
++		return err
++	}
++	for _, area := range resp.Results {
++		fmt.Println(area.Name)
++	}
++	config.Next = resp.Next
++	config.Previous = resp.Previous
++	return nil
++}
++
++func commandExplore(config *Config, args ...string) error {
++	if len(args) == 0 {
++		return fmt.Errorf("you must provide a location name")
++	}
++	location := args[0]
++	spinner := ui.NewSpinner(fmt.Sprintf("Exploring %s...", location))
++	spinner.Start()
++	area, err := config.Client.GetLocationArea(location)
++	spinner.Stop()
++	if err != nil {
++		return err
++	}
++	fmt.Println(ui.ColorCyan(fmt.Sprintf("Found Pokemon in %s:", location)))
++	for _, enc := range area.PokemonEncounters {
++		fmt.Printf(" - %s\n", enc.Pokemon.Name)
++	}
++	return nil
++}
++
++func commandCatch(config *Config, args ...string) error {
++	if len(args) == 0 {
++		return fmt.Errorf("you must provide a pokemon name")
++	}
++	pokemonName := strings.ToLower(args[0])
++	if _, exists := config.Pokedex.Get(pokemonName); exists {
++		return fmt.Errorf("you have already caught %s", pokemonName)
++	}
++	spinner := ui.NewSpinner(fmt.Sprintf("Locating %s...", pokemonName))
++	spinner.Start()
++	pokemon, err := config.Client.GetPokemon(pokemonName)
++	spinner.Stop()
++	if err != nil {
++		return err
++	}
++	fmt.Printf("Throwing a Pokeball at %s...\n", pokemon.Name)
++	baseExp := pokemon.BaseExperience
++	if baseExp <= 0 {
++		baseExp = 1
++	}
++	res := rand.Intn(baseExp)
++	if res < 40 {
++		fmt.Println(ui.ColorGreen(fmt.Sprintf("%s was caught!", pokemon.Name)))
++		fmt.Println("You may now inspect it with the inspect command.")
++		config.Pokedex.Add(pokemon)
++	} else {
++		fmt.Println(ui.ColorYellow(fmt.Sprintf("%s escaped!", pokemon.Name)))
++	}
++	return nil
++}
++
++func commandInspect(config *Config, args ...string) error {
++	if len(args) == 0 {
++		return fmt.Errorf("you must provide a pokemon name")
++	}
++	pokemonName := strings.ToLower(args[0])
++	pokemon, exists := config.Pokedex.Get(pokemonName)
++	if !exists {
++		fmt.Println("you have not caught that pokemon")
++		return nil
++	}
++	fmt.Printf("Name: %s\nHeight: %d\nWeight: %d\nStats:\n", pokemon.Name, pokemon.Height, pokemon.Weight)
++	for _, s := range pokemon.Stats {
++		fmt.Printf("  -%s: %d\n", s.Stat.Name, s.BaseStat)
++	}
++	fmt.Println("Types:")
++	for _, t := range pokemon.Types {
++		fmt.Printf("  - %s\n", ui.ColorType(t.Type.Name))
++	}
++	return nil
++}
++
++func commandPokedex(config *Config, args ...string) error {
++	pokemonMap := config.Pokedex.GetAll()
++	if len(pokemonMap) == 0 {
++		fmt.Println("Your Pokedex is empty. Go catch some Pokemon!")
++		return nil
++	}
++	fmt.Println("Your Pokedex:")
++	for _, pokemon := range pokemonMap {
++		fmt.Printf(" - %s\n", pokemon.Name)
++	}
++	return nil
++}
++
++func commandRelease(config *Config, args ...string) error {
++	if len(args) == 0 {
++		return fmt.Errorf("you must provide a pokemon name")
++	}
++	pokemonName := strings.ToLower(args[0])
++	pokemon, exists := config.Pokedex.Get(pokemonName)
++	if !exists {
++		fmt.Println("you have not caught that pokemon")
++		return nil
++	}
++	config.Pokedex.Remove(pokemonName)
++	fmt.Println(ui.ColorYellow(fmt.Sprintf("Bye bye, %s! %s was released back into the wild.", pokemon.Name, pokemon.Name)))
++	return nil
++}
++
++func commandSummary(config *Config, args ...string) error {
++	pokemonMap := config.Pokedex.GetAll()
++	total := len(pokemonMap)
++	fmt.Println(ui.ColorCyan("--- Trainer Summary ---"))
++	fmt.Printf("Total Pokémon caught: %d\n", total)
++	if total == 0 {
++		fmt.Println("Catch some Pokémon first to view your statistics!")
++		return nil
++	}
++	var heaviest, tallest pokeapi.Pokemon
++	typeCounts := make(map[string]int)
++	first := true
++	for _, p := range pokemonMap {
++		if first {
++			heaviest, tallest, first = p, p, false
++		} else {
++			if p.Weight > heaviest.Weight { heaviest = p }
++			if p.Height > tallest.Height { tallest = p }
++		}
++		for _, t := range p.Types { typeCounts[t.Type.Name]++ }
++	}
++	fmt.Printf("Heaviest Pokémon: %s (%d)\nTallest Pokémon: %s (%d)\n", heaviest.Name, heaviest.Weight, tallest.Name, tallest.Height)
++	var favType string
++	maxCount := 0
++	for t, count := range typeCounts {
++		if count > maxCount {
++			maxCount, favType = count, t
++		}
++	}
++	if favType != "" {
++		fmt.Printf("Favorite Type: %s (%d)\n", ui.ColorType(favType), maxCount)
++	}
++	fmt.Println("Type Breakdown:")
++	for t, count := range typeCounts {
++		fmt.Printf("  - %s: %d\n", ui.ColorType(t), count)
++	}
++	return nil
++}
++
++func commandFilter(config *Config, args ...string) error {
++	if len(args) == 0 { return fmt.Errorf("you must provide an elemental type") }
++	targetType := strings.ToLower(args[0])
++	var matches []pokeapi.Pokemon
++	for _, p := range config.Pokedex.GetAll() {
++		for _, t := range p.Types {
++			if strings.ToLower(t.Type.Name) == targetType {
++				matches = append(matches, p)
++				break
++			}
++		}
++	}
++	if len(matches) == 0 {
++		fmt.Printf("No %s Pokémon found in your Pokédex.\n", ui.ColorType(targetType))
++		return nil
++	}
++	titleType := targetType
++	if len(targetType) > 0 { titleType = strings.ToUpper(targetType[:1]) + targetType[1:] }
++	fmt.Printf("%s Pokémon in your Pokédex:\n", titleType)
++	for _, p := range matches { fmt.Printf(" - %s\n", p.Name) }
++	return nil
++}
++
++func commandSave(config *Config, args ...string) error {
++	if err := config.Pokedex.Save(); err != nil { return err }
++	target := config.Pokedex.Filepath()
++	if target == "" { target = "in-memory (no file configured)" }
++	fmt.Printf("Pokédex successfully saved to %s (%d Pokémon)\n", target, config.Pokedex.Count())
++	return nil
++}
++
++func commandLoad(config *Config, args ...string) error {
++	if err := config.Pokedex.Load(); err != nil { return err }
++	target := config.Pokedex.Filepath()
++	if target == "" { target = "in-memory (no file configured)" }
++	fmt.Printf("Pokédex successfully loaded from %s (%d Pokémon)\n", target, config.Pokedex.Count())
++	return nil
++}
++
++func GetCommands() map[string]CliCommand {
++	return map[string]CliCommand{
++		"exit":    {Name: "exit", Description: "Exit the Pokedex", Callback: commandExit},
++		"help":    {Name: "help", Description: "Displays a help message", Callback: commandHelp},
++		"map":     {Name: "map", Description: "Displays the next 20 locations", Callback: commandMap},
++		"mapb":    {Name: "mapb", Description: "Displays the previous 20 locations", Callback: commandMapb},
++		"explore": {Name: "explore", Description: "Shows all pokemon in a given area", Callback: commandExplore},
++		"catch":   {Name: "catch", Description: "Attempt to catch a pokemon", Callback: commandCatch},
++		"inspect": {Name: "inspect", Description: "View details about a caught pokemon", Callback: commandInspect},
++		"pokedex": {Name: "pokedex", Description: "List all caught pokemon", Callback: commandPokedex},
++		"save":    {Name: "save", Description: "Save your Pokédex to disk", Callback: commandSave},
++		"load":    {Name: "load", Description: "Load your Pokédex from disk", Callback: commandLoad},
++		"release": {Name: "release", Description: "Release a caught pokemon", Callback: commandRelease},
++		"summary": {Name: "summary", Description: "Display trainer statistics", Callback: commandSummary},
++		"filter":  {Name: "filter", Description: "Filter caught Pokémon by type", Callback: commandFilter},
++	}
++}
+diff --git a/internal/cli/commands_test.go b/internal/cli/commands_test.go
+new file mode 100644
+index 0000000..780c6ba
+--- /dev/null
++++ b/internal/cli/commands_test.go
+@@ -0,0 +1,31 @@
++package cli
++
++import (
++	
++	"testing"
++	
++	
++)
++
++func TestGetCommands(t *testing.T) {
++	commands := GetCommands()
++
++	// Check if all commands are present
++	expectedCommands := []string{
++		"exit", "help", "map", "mapb", "explore", "catch", "inspect", "pokedex", "save", "load", "release", "summary", "filter",
++	}
++
++	if len(commands) != len(expectedCommands) {
++		t.Errorf("expected %d commands, got %d", len(expectedCommands), len(commands))
++	}
++
++	for _, name := range expectedCommands {
++		if _, ok := commands[name]; !ok {
++			t.Errorf("command %s not found", name)
++		}
++	}
++}
++
++func TestFetchAndPrintLocationAreas(t *testing.T) {
++	// this would mock the HTTP client in a real test
++}
+diff --git a/internal/cli/config.go b/internal/cli/config.go
+new file mode 100644
+index 0000000..9b70da4
+--- /dev/null
++++ b/internal/cli/config.go
+@@ -0,0 +1,20 @@
++package cli
++
++import (
++	"pokedexcli/internal/pokeapi"
++	"pokedexcli/internal/repository"
++)
++
++type CliCommand struct {
++	Name        string
++	Description string
++	Callback    func(config *Config, args ...string) error
++}
++
++type Config struct {
++	Commands map[string]CliCommand
++	Next     *string
++	Previous *string
++	Client   *pokeapi.Client
++	Pokedex  *repository.Pokedex
++}
+diff --git a/internal/cli/repl.go b/internal/cli/repl.go
+new file mode 100644
+index 0000000..3d15d2b
+--- /dev/null
++++ b/internal/cli/repl.go
+@@ -0,0 +1,33 @@
++package cli
++
++import (
++	"bufio"
++	"fmt"
++	"os"
++	"strings"
++
++	"pokedexcli/internal/ui"
++)
++
++func StartRepl(config *Config) {
++	config.Pokedex.Load()
++	scanner := bufio.NewScanner(os.Stdin)
++	for {
++		fmt.Print(ui.ColorCyan("Pokedex > "))
++		if !scanner.Scan() { break }
++		cleanText := cleanInput(scanner.Text())
++		if len(cleanText) == 0 { continue }
++		cmd, ok := config.Commands[cleanText[0]]
++		if !ok {
++			fmt.Println("Unknown command")
++			continue
++		}
++		args := []string{}
++		if len(cleanText) > 1 { args = cleanText[1:] }
++		if err := cmd.Callback(config, args...); err != nil { fmt.Println(err) }
++	}
++}
++
++func cleanInput(text string) []string {
++	return strings.Fields(strings.ToLower(strings.TrimSpace(text)))
++}
+diff --git a/internal/cli/repl_test.go b/internal/cli/repl_test.go
+new file mode 100644
+index 0000000..0b520fe
+--- /dev/null
++++ b/internal/cli/repl_test.go
+@@ -0,0 +1,32 @@
++package cli
++
++import (
++	"reflect"
++	"testing"
++)
++
++func TestCleanInput(t *testing.T) {
++	cases := []struct {
++		input    string
++		expected []string
++	}{
++		{
++			input:    "  hello  world  ",
++			expected: []string{"hello", "world"},
++		},
++		{
++			input:    "Charmander Bulbasaur SQUIRTLE",
++			expected: []string{"charmander", "bulbasaur", "squirtle"},
++		},
++	}
++	for _, c := range cases {
++		actual := cleanInput(c.input)
++		if len(actual) != len(c.expected) {
++			t.Errorf("expected %v, got %v", c.expected, actual)
++			continue
++		}
++		if !reflect.DeepEqual(actual, c.expected) {
++			t.Errorf("expected %v, got %v", c.expected, actual)
++		}
++	}
++}
+diff --git a/internal/pokeapi/client.go b/internal/pokeapi/client.go
+new file mode 100644
+index 0000000..a5f1547
+--- /dev/null
++++ b/internal/pokeapi/client.go
+@@ -0,0 +1,73 @@
++package pokeapi
++
++import (
++	"encoding/json"
++	"fmt"
++	"io"
++	"net/http"
++	"time"
++
++	"pokedexcli/internal/pokecache"
++)
++
++type Client struct {
++	httpClient http.Client
++	cache      pokecache.Cache
++}
++
++func NewClient(timeout time.Duration, cacheInterval time.Duration) Client {
++	return Client{
++		httpClient: http.Client{
++			Timeout: timeout,
++		},
++		cache: pokecache.NewCache(cacheInterval),
++	}
++}
++
++func (c *Client) GetLocationAreas(pageURL *string) (LocationAreaResponse, error) {
++	url := "https://pokeapi.co/api/v2/location-area"
++	if pageURL != nil && *pageURL != "" {
++		url = *pageURL
++	}
++	var data LocationAreaResponse
++	err := c.fetch(url, &data)
++	return data, err
++}
++
++func (c *Client) GetLocationArea(locationName string) (LocationArea, error) {
++	url := fmt.Sprintf("https://pokeapi.co/api/v2/location-area/%s", locationName)
++	var data LocationArea
++	err := c.fetch(url, &data)
++	return data, err
++}
++
++func (c *Client) GetPokemon(pokemonName string) (Pokemon, error) {
++	url := fmt.Sprintf("https://pokeapi.co/api/v2/pokemon/%s", pokemonName)
++	var data Pokemon
++	err := c.fetch(url, &data)
++	return data, err
++}
++
++func (c *Client) fetch(url string, target interface{}) error {
++	if val, ok := c.cache.Get(url); ok {
++		return json.Unmarshal(val, target)
++	}
++	req, err := http.NewRequest(http.MethodGet, url, nil)
++	if err != nil {
++		return err
++	}
++	resp, err := c.httpClient.Do(req)
++	if err != nil {
++		return err
++	}
++	defer resp.Body.Close()
++	if resp.StatusCode != http.StatusOK {
++		return fmt.Errorf("bad status: %s", resp.Status)
++	}
++	body, err := io.ReadAll(resp.Body)
++	if err != nil {
++		return err
++	}
++	c.cache.Add(url, body)
++	return json.Unmarshal(body, target)
++}
+diff --git a/config.go b/internal/pokeapi/types.go
+similarity index 68%
+rename from config.go
+rename to internal/pokeapi/types.go
+index df19ffb..a2b819c 100644
+--- a/config.go
++++ b/internal/pokeapi/types.go
+@@ -1,28 +1,5 @@
+-package main
++package pokeapi
+ 
+-import "pokedexcli/internal/pokecache"
+-
+-// cliCommand defines a command available in the Pokedex REPL, containing its
+-// command trigger name, help description, and execution callback.
+-type cliCommand struct {
+-	name        string
+-	description string
+-	callback    func(config *config, args ...string) error
+-}
+-
+-// config stores the runtime state of the application, including registered commands,
+-// pagination URLs for location areas, the response cache, captured Pokémon, and the save file path.
+-type config struct {
+-	commands map[string]cliCommand
+-	next     string
+-	previous string
+-	cache    pokecache.Cache
+-	pokedex  map[string]Pokemon
+-	saveFile string
+-}
+-
+-// Pokemon represents the schema returned by the PokeAPI for a specific Pokémon,
+-// including its base statistics, physical attributes, and elemental types.
+ type Pokemon struct {
+ 	ID             int    `json:"id"`
+ 	Name           string `json:"name"`
+@@ -46,8 +23,7 @@ type Pokemon struct {
+ 	} `json:"types"`
+ }
+ 
+-// locationAreaResponse models the paginated list returned by the PokeAPI location-area endpoint.
+-type locationAreaResponse struct {
++type LocationAreaResponse struct {
+ 	Count    int     `json:"count"`
+ 	Next     *string `json:"next"`
+ 	Previous *string `json:"previous"`
+@@ -57,8 +33,6 @@ type locationAreaResponse struct {
+ 	} `json:"results"`
+ }
+ 
+-// LocationArea models detailed information about a specific location area in PokeAPI,
+-// including Pokémon that can be encountered there.
+ type LocationArea struct {
+ 	ID                   int    `json:"id"`
+ 	Name                 string `json:"name"`
+diff --git a/internal/repository/pokedex.go b/internal/repository/pokedex.go
+new file mode 100644
+index 0000000..c58785c
+--- /dev/null
++++ b/internal/repository/pokedex.go
+@@ -0,0 +1,109 @@
++package repository
++
++import (
++	"encoding/json"
++	
++	"os"
++	"sync"
++
++	"pokedexcli/internal/pokeapi"
++)
++
++type Pokedex struct {
++	filepath string
++	pokemon  map[string]pokeapi.Pokemon
++	mu       sync.RWMutex
++}
++
++func NewPokedex(filepath string) *Pokedex {
++	return &Pokedex{
++		filepath: filepath,
++		pokemon:  make(map[string]pokeapi.Pokemon),
++	}
++}
++
++func (p *Pokedex) Load() error {
++	p.mu.Lock()
++	defer p.mu.Unlock()
++	if p.filepath == "" {
++		return nil
++	}
++	data, err := os.ReadFile(p.filepath)
++	if err != nil {
++		if os.IsNotExist(err) {
++			return nil
++		}
++		return err
++	}
++	var loaded map[string]pokeapi.Pokemon
++	if err := json.Unmarshal(data, &loaded); err != nil {
++		return err
++	}
++	if loaded != nil {
++		p.pokemon = loaded
++	} else {
++		p.pokemon = make(map[string]pokeapi.Pokemon)
++	}
++	return nil
++}
++
++func (p *Pokedex) Save() error {
++	p.mu.RLock()
++	defer p.mu.RUnlock()
++	if p.filepath == "" {
++		return nil
++	}
++	data, err := json.MarshalIndent(p.pokemon, "", "  ")
++	if err != nil {
++		return err
++	}
++	return os.WriteFile(p.filepath, data, 0644)
++}
++
++func (p *Pokedex) Add(pokemon pokeapi.Pokemon) error {
++	p.mu.Lock()
++	p.pokemon[pokemon.Name] = pokemon
++	p.mu.Unlock()
++	return p.Save()
++}
++
++func (p *Pokedex) Remove(name string) error {
++	p.mu.Lock()
++	delete(p.pokemon, name)
++	p.mu.Unlock()
++	return p.Save()
++}
++
++func (p *Pokedex) Get(name string) (pokeapi.Pokemon, bool) {
++	p.mu.RLock()
++	defer p.mu.RUnlock()
++	pokemon, exists := p.pokemon[name]
++	return pokemon, exists
++}
++
++func (p *Pokedex) GetAll() map[string]pokeapi.Pokemon {
++	p.mu.RLock()
++	defer p.mu.RUnlock()
++	copy := make(map[string]pokeapi.Pokemon, len(p.pokemon))
++	for k, v := range p.pokemon {
++		copy[k] = v
++	}
++	return copy
++}
++
++func (p *Pokedex) Count() int {
++	p.mu.RLock()
++	defer p.mu.RUnlock()
++	return len(p.pokemon)
++}
++
++func (p *Pokedex) Filepath() string {
++	return p.filepath
++}
++
++// Ensure the map can be injected directly for tests
++func (p *Pokedex) SetPokemonMap(pm map[string]pokeapi.Pokemon) {
++    p.mu.Lock()
++    defer p.mu.Unlock()
++    p.pokemon = pm
++}
+diff --git a/colors.go b/internal/ui/colors.go
+similarity index 86%
+rename from colors.go
+rename to internal/ui/colors.go
+index b596bd4..477df20 100644
+--- a/colors.go
++++ b/internal/ui/colors.go
+@@ -1,4 +1,4 @@
+-package main
++package ui
+ 
+ import (
+ 	"os"
+@@ -42,8 +42,8 @@ func colorize(colorCode, text string) string {
+ 	return colorCode + text + ansiReset
+ }
+ 
+-// colorGreen returns green-styled text for success messages.
+-func colorGreen(text string) string {
++// ColorGreen returns green-styled text for success messages.
++func ColorGreen(text string) string {
+ 	return colorize(ansiGreen, text)
+ }
+ 
+@@ -52,19 +52,19 @@ func colorRed(text string) string {
+ 	return colorize(ansiRed, text)
+ }
+ 
+-// colorYellow returns yellow-styled text for escapes and notifications.
+-func colorYellow(text string) string {
++// ColorYellow returns yellow-styled text for escapes and notifications.
++func ColorYellow(text string) string {
+ 	return colorize(ansiYellow, text)
+ }
+ 
+-// colorCyan returns cyan-styled text for prompts and titles.
+-func colorCyan(text string) string {
++// ColorCyan returns cyan-styled text for prompts and titles.
++func ColorCyan(text string) string {
+ 	return colorize(ansiCyan, text)
+ }
+ 
+-// colorType returns the elemental type formatted with an authentic, type-specific ANSI color
++// ColorType returns the elemental type formatted with an authentic, type-specific ANSI color
+ // for all 18 official Pokémon elemental types.
+-func colorType(typeName string) string {
++func ColorType(typeName string) string {
+ 	switch typeName {
+ 	case "normal":
+ 		return colorize(ansiWhite, typeName)
+diff --git a/colors_test.go b/internal/ui/colors_test.go
+similarity index 90%
+rename from colors_test.go
+rename to internal/ui/colors_test.go
+index 1b1f0b5..f950bb9 100644
+--- a/colors_test.go
++++ b/internal/ui/colors_test.go
+@@ -1,4 +1,4 @@
+-package main
++package ui
+ 
+ import (
+ 	"strings"
+@@ -11,12 +11,12 @@ func TestColorize(t *testing.T) {
+ 	defer SetColorEnabled(false)
+ 
+ 	text := "pikachu"
+-	green := colorGreen(text)
++	green := ColorGreen(text)
+ 	if !strings.Contains(green, ansiGreen) {
+ 		t.Errorf("expected green ANSI code in %q", green)
+ 	}
+ 
+-	yellow := colorYellow(text)
++	yellow := ColorYellow(text)
+ 	if !strings.Contains(yellow, ansiYellow) {
+ 		t.Errorf("expected yellow ANSI code in %q", yellow)
+ 	}
+@@ -26,14 +26,14 @@ func TestColorize(t *testing.T) {
+ 		t.Errorf("expected red ANSI code in %q", red)
+ 	}
+ 
+-	cyan := colorCyan(text)
++	cyan := ColorCyan(text)
+ 	if !strings.Contains(cyan, ansiCyan) {
+ 		t.Errorf("expected cyan ANSI code in %q", cyan)
+ 	}
+ 
+ 	// Test disabling colors
+ 	SetColorEnabled(false)
+-	plain := colorGreen("plain text")
++	plain := ColorGreen("plain text")
+ 	if plain != "plain text" {
+ 		t.Errorf("expected plain text when color is disabled, got %q", plain)
+ 	}
+@@ -69,7 +69,7 @@ func TestColorType(t *testing.T) {
+ 	}
+ 
+ 	for _, tc := range types {
+-		colored := colorType(tc.typeName)
++		colored := ColorType(tc.typeName)
+ 		if !strings.Contains(colored, tc.expectedCode) {
+ 			t.Errorf("type %q expected code %q, got %q", tc.typeName, tc.expectedCode, colored)
+ 		}
+diff --git a/internal/ui/spinner.go b/internal/ui/spinner.go
+new file mode 100644
+index 0000000..4bc89b3
+--- /dev/null
++++ b/internal/ui/spinner.go
+@@ -0,0 +1,39 @@
++package ui
++import (
++	"fmt"
++	"time"
++)
++
++type Spinner struct {
++	stopChan chan struct{}
++	message  string
++}
++
++func NewSpinner(message string) *Spinner {
++	return &Spinner{
++		stopChan: make(chan struct{}),
++		message:  message,
++	}
++}
++
++func (s *Spinner) Start() {
++	frames := []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
++	go func() {
++		for {
++			for _, frame := range frames {
++				select {
++				case <-s.stopChan:
++					return
++				default:
++					fmt.Printf("\r%s %s", ColorCyan(frame), s.message)
++					time.Sleep(100 * time.Millisecond)
++				}
++			}
++		}
++	}()
++}
++
++func (s *Spinner) Stop() {
++	close(s.stopChan)
++	fmt.Print("\r\033[K")
++}
+diff --git a/main.go b/main.go
+index a5621ac..3971656 100644
+--- a/main.go
++++ b/main.go
+@@ -1,24 +1,24 @@
+-// Package main serves as the entrypoint for the Pokedex CLI application.
+ package main
+ 
+ import (
+ 	"fmt"
+ 	"time"
+ 
+-	"pokedexcli/internal/pokecache"
++	"pokedexcli/internal/cli"
++	"pokedexcli/internal/pokeapi"
++	"pokedexcli/internal/repository"
+ )
+ 
+-// main initializes application state, the TTL cache, and starts the REPL.
+ func main() {
+ 	fmt.Println("Welcome to the Pokedex!")
++	pokeClient := pokeapi.NewClient(5*time.Second, 5*time.Minute)
++	pokedexRepo := repository.NewPokedex("pokedex.json")
+ 
+-	config := &config{
+-		commands: GetCommands(),
+-		next:     "https://pokeapi.co/api/v2/location-area",
+-		previous: "",
+-		cache:    pokecache.NewCache(5 * time.Second),
+-		pokedex:  make(map[string]Pokemon),
+-		saveFile: "pokedex.json",
++	config := &cli.Config{
++		Commands: cli.GetCommands(),
++		Client:   &pokeClient,
++		Pokedex:  pokedexRepo,
+ 	}
+-	StartRepl(config)
++
++	cli.StartRepl(config)
+ }
+diff --git a/repl.go b/repl.go
+deleted file mode 100644
+index 8bc054f..0000000
+--- a/repl.go
++++ /dev/null
+@@ -1,547 +0,0 @@
+-package main
+-
+-import (
+-	"bufio"
+-	"encoding/json"
+-	"fmt"
+-	"io"
+-	"math/rand"
+-	"net/http"
+-	"os"
+-	"strings"
+-)
+-
+-// StartRepl initiates the interactive read-eval-print loop (REPL), scanning standard input
+-// for user commands, parsing arguments, and executing registered callbacks.
+-func StartRepl(config *config) {
+-	if config.pokedex == nil {
+-		config.pokedex = make(map[string]Pokemon)
+-	}
+-	if err := loadPokedex(config); err != nil {
+-		fmt.Fprintln(os.Stderr, colorYellow(fmt.Sprintf("Warning: could not load existing Pokédex: %v", err)))
+-	}
+-	scanner := bufio.NewScanner(os.Stdin)
+-
+-	for {
+-		fmt.Print(colorCyan("Pokedex > "))
+-		if !scanner.Scan() {
+-			break
+-		}
+-		userText := scanner.Text()
+-		cleanText := cleanInput(userText)
+-		if len(cleanText) == 0 {
+-			continue
+-		}
+-
+-		commands := config.commands
+-		cmd, ok := commands[cleanText[0]]
+-		if !ok {
+-			fmt.Println("Unknown command")
+-			continue
+-		}
+-		args := []string{}
+-		if len(cleanText) > 1 {
+-			args = cleanText[1:]
+-		}
+-		err := cmd.callback(config, args...)
+-		if err != nil {
+-			fmt.Println(err)
+-		}
+-	}
+-	if err := scanner.Err(); err != nil {
+-		fmt.Fprintln(os.Stderr, "Error reading input:", err)
+-	}
+-}
+-
+-// cleanInput trims outer whitespace and splits the input string into lowercase word tokens.
+-func cleanInput(text string) []string {
+-	cleanText := strings.TrimSpace(text)
+-	words := strings.Fields(strings.ToLower(cleanText))
+-	return words
+-}
+-
+-// commandExit terminates the Pokedex CLI application cleanly with exit code 0.
+-func commandExit(config *config, args ...string) error {
+-	fmt.Println("Closing the Pokedex... Goodbye!")
+-	defer os.Exit(0)
+-	return nil
+-}
+-
+-// commandHelp displays usage instructions and lists all registered commands with their descriptions.
+-func commandHelp(config *config, args ...string) error {
+-	fmt.Println()
+-	fmt.Println("Welcome to the Pokedex!")
+-	fmt.Println("Usage:")
+-	fmt.Println()
+-	for _, cmd := range config.commands {
+-		fmt.Printf("%s: %s\n", cmd.name, cmd.description)
+-	}
+-	fmt.Println()
+-	return nil
+-}
+-
+-// commandMap fetches and displays the next 20 location areas from the PokeAPI.
+-func commandMap(config *config, args ...string) error {
+-	if config.next == "" {
+-		return fmt.Errorf("you're on the last page")
+-	}
+-
+-	return printLocationAreas(config, config.next)
+-}
+-
+-// commandMapb fetches and displays the previous 20 location areas from the PokeAPI.
+-func commandMapb(config *config, args ...string) error {
+-	if config.previous == "" {
+-		return fmt.Errorf("you're on the first page")
+-	}
+-
+-	return printLocationAreas(config, config.previous)
+-}
+-
+-// printLocationAreas retrieves location areas from the given URL (via cache or HTTP),
+-// prints the names of the areas, and updates next/previous pagination state.
+-func printLocationAreas(config *config, url string) error {
+-	var body []byte
+-
+-	if val, ok := config.cache.Get(url); ok {
+-		body = val
+-	} else {
+-		resp, err := http.Get(url)
+-		if err != nil {
+-			return err
+-		}
+-		defer resp.Body.Close()
+-
+-		data, err := io.ReadAll(resp.Body)
+-		if err != nil {
+-			return err
+-		}
+-		body = data
+-		config.cache.Add(url, body)
+-	}
+-
+-	var data locationAreaResponse
+-	if err := json.Unmarshal(body, &data); err != nil {
+-		return err
+-	}
+-
+-	for _, area := range data.Results {
+-		fmt.Println(area.Name)
+-	}
+-
+-	if data.Next != nil {
+-		config.next = *data.Next
+-	} else {
+-		config.next = ""
+-	}
+-
+-	if data.Previous != nil {
+-		config.previous = *data.Previous
+-	} else {
+-		config.previous = ""
+-	}
+-
+-	return nil
+-}
+-
+-// commandExplore lists all Pokémon that can be encountered within a specified location area.
+-func commandExplore(config *config, args ...string) error {
+-	if len(args) == 0 {
+-		return fmt.Errorf("you must provide a location name")
+-	}
+-	location := args[0]
+-	fmt.Printf("Exploring %s...\n", location)
+-
+-	fullURL := "https://pokeapi.co/api/v2/location-area/" + location
+-	var body []byte
+-
+-	if val, ok := config.cache.Get(fullURL); ok {
+-		body = val
+-	} else {
+-		req, err := http.Get(fullURL)
+-		if err != nil {
+-			return err
+-		}
+-		defer req.Body.Close()
+-
+-		data, err := io.ReadAll(req.Body)
+-		if err != nil {
+-			return err
+-		}
+-		body = data
+-		config.cache.Add(fullURL, data)
+-	}
+-
+-	var data LocationArea
+-	if err := json.Unmarshal(body, &data); err != nil {
+-		return err
+-	}
+-
+-	fmt.Println("Found Pokemon:")
+-	for _, pokemonEncounter := range data.PokemonEncounters {
+-		fmt.Printf(" - %s\n", pokemonEncounter.Pokemon.Name)
+-	}
+-
+-	return nil
+-}
+-
+-// commandCatch attempts to catch a specified Pokémon, calculating catch probability based
+-// on base experience and adding caught Pokémon to the user's Pokédex.
+-func commandCatch(config *config, args ...string) error {
+-	if len(args) == 0 {
+-		return fmt.Errorf("you must provide a pokemon name")
+-	}
+-	pokemonName := strings.ToLower(args[0])
+-	fmt.Printf("Throwing a Pokeball at %s...\n", pokemonName)
+-
+-	fullURL := "https://pokeapi.co/api/v2/pokemon/" + pokemonName
+-	var body []byte
+-
+-	if val, ok := config.cache.Get(fullURL); ok {
+-		body = val
+-	} else {
+-		req, err := http.Get(fullURL)
+-		if err != nil {
+-			return err
+-		}
+-		defer req.Body.Close()
+-
+-		if req.StatusCode != http.StatusOK {
+-			return fmt.Errorf("failed to find pokemon: %s", req.Status)
+-		}
+-
+-		data, err := io.ReadAll(req.Body)
+-		if err != nil {
+-			return err
+-		}
+-		body = data
+-		config.cache.Add(fullURL, data)
+-	}
+-
+-	var pokemon Pokemon
+-	if err := json.Unmarshal(body, &pokemon); err != nil {
+-		return err
+-	}
+-
+-	baseExp := pokemon.BaseExperience
+-	if baseExp <= 0 {
+-		baseExp = 1
+-	}
+-
+-	res := rand.Intn(baseExp)
+-	if res < 40 {
+-		fmt.Println(colorGreen(fmt.Sprintf("%s was caught!", pokemon.Name)))
+-		fmt.Println("You may now inspect it with the inspect command.")
+-		if config.pokedex == nil {
+-			config.pokedex = make(map[string]Pokemon)
+-		}
+-		config.pokedex[pokemon.Name] = pokemon
+-		if err := savePokedex(config); err != nil {
+-			fmt.Fprintln(os.Stderr, colorYellow(fmt.Sprintf("Warning: failed to auto-save Pokédex: %v", err)))
+-		}
+-	} else {
+-		fmt.Println(colorYellow(fmt.Sprintf("%s escaped!", pokemon.Name)))
+-	}
+-
+-	return nil
+-}
+-
+-// commandInspect prints comprehensive stats, height, weight, and elemental types
+-// for a previously captured Pokémon.
+-func commandInspect(config *config, args ...string) error {
+-	if len(args) == 0 {
+-		return fmt.Errorf("you must provide a pokemon name")
+-	}
+-	pokemonName := strings.ToLower(args[0])
+-
+-	pokemon, exists := config.pokedex[pokemonName]
+-	if !exists {
+-		fmt.Println("you have not caught that pokemon")
+-		return nil
+-	}
+-
+-	fmt.Printf("Name: %s\n", pokemon.Name)
+-	fmt.Printf("Height: %d\n", pokemon.Height)
+-	fmt.Printf("Weight: %d\n", pokemon.Weight)
+-	fmt.Println("Stats:")
+-	for _, s := range pokemon.Stats {
+-		fmt.Printf("  -%s: %d\n", s.Stat.Name, s.BaseStat)
+-	}
+-	fmt.Println("Types:")
+-	for _, t := range pokemon.Types {
+-		fmt.Printf("  - %s\n", colorType(t.Type.Name))
+-	}
+-
+-	return nil
+-}
+-
+-// commandPokedex lists all Pokémon names that have been captured and saved in the user's Pokédex.
+-func commandPokedex(config *config, args ...string) error {
+-	fmt.Println("Your Pokedex:")
+-	for _, pokemon := range config.pokedex {
+-		fmt.Printf(" - %s\n", pokemon.Name)
+-	}
+-	return nil
+-}
+-
+-// savePokedex writes the current caught Pokémon collection to the configured JSON file.
+-func savePokedex(cfg *config) error {
+-	if cfg == nil || cfg.saveFile == "" {
+-		return nil
+-	}
+-	if cfg.pokedex == nil {
+-		cfg.pokedex = make(map[string]Pokemon)
+-	}
+-	data, err := json.MarshalIndent(cfg.pokedex, "", "  ")
+-	if err != nil {
+-		return err
+-	}
+-	return os.WriteFile(cfg.saveFile, data, 0644)
+-}
+-
+-// loadPokedex reads previously saved Pokémon from the configured JSON file.
+-func loadPokedex(cfg *config) error {
+-	if cfg == nil || cfg.saveFile == "" {
+-		return nil
+-	}
+-	data, err := os.ReadFile(cfg.saveFile)
+-	if err != nil {
+-		if os.IsNotExist(err) {
+-			return nil
+-		}
+-		return err
+-	}
+-	var loaded map[string]Pokemon
+-	if err := json.Unmarshal(data, &loaded); err != nil {
+-		return err
+-	}
+-	if cfg.pokedex == nil {
+-		cfg.pokedex = make(map[string]Pokemon)
+-	}
+-	for k, v := range loaded {
+-		cfg.pokedex[k] = v
+-	}
+-	return nil
+-}
+-
+-// commandSave manually saves the Pokédex to disk.
+-func commandSave(config *config, args ...string) error {
+-	if err := savePokedex(config); err != nil {
+-		return fmt.Errorf("failed to save pokedex: %w", err)
+-	}
+-	target := config.saveFile
+-	if target == "" {
+-		target = "in-memory (no file configured)"
+-	}
+-	fmt.Printf("Pokédex successfully saved to %s (%d Pokémon)\n", target, len(config.pokedex))
+-	return nil
+-}
+-
+-// commandLoad manually reloads the Pokédex from disk.
+-func commandLoad(config *config, args ...string) error {
+-	if err := loadPokedex(config); err != nil {
+-		return fmt.Errorf("failed to load pokedex: %w", err)
+-	}
+-	target := config.saveFile
+-	if target == "" {
+-		target = "in-memory (no file configured)"
+-	}
+-	fmt.Printf("Pokédex successfully loaded from %s (%d Pokémon)\n", target, len(config.pokedex))
+-	return nil
+-}
+-
+-// commandRelease removes a caught Pokémon from the Pokédex and releases it back into the wild.
+-func commandRelease(config *config, args ...string) error {
+-	if len(args) == 0 {
+-		return fmt.Errorf("you must provide a pokemon name")
+-	}
+-	pokemonName := strings.ToLower(args[0])
+-
+-	pokemon, exists := config.pokedex[pokemonName]
+-	if !exists {
+-		fmt.Println("you have not caught that pokemon")
+-		return nil
+-	}
+-
+-	delete(config.pokedex, pokemonName)
+-	if err := savePokedex(config); err != nil {
+-		fmt.Fprintln(os.Stderr, colorYellow(fmt.Sprintf("Warning: failed to auto-save Pokédex: %v", err)))
+-	}
+-	fmt.Println(colorYellow(fmt.Sprintf("Bye bye, %s! %s was released back into the wild.", pokemon.Name, pokemon.Name)))
+-	return nil
+-}
+-
+-// commandSummary displays overall trainer statistics and collection metrics.
+-func commandSummary(config *config, args ...string) error {
+-	total := len(config.pokedex)
+-	fmt.Println(colorCyan("--- Trainer Summary ---"))
+-	fmt.Printf("Total Pokémon caught: %d\n", total)
+-	if total == 0 {
+-		fmt.Println("Catch some Pokémon first to view your statistics!")
+-		return nil
+-	}
+-
+-	var heaviest Pokemon
+-	var tallest Pokemon
+-	typeCounts := make(map[string]int)
+-
+-	first := true
+-	for _, p := range config.pokedex {
+-		if first {
+-			heaviest = p
+-			tallest = p
+-			first = false
+-		} else {
+-			if p.Weight > heaviest.Weight {
+-				heaviest = p
+-			}
+-			if p.Height > tallest.Height {
+-				tallest = p
+-			}
+-		}
+-
+-		for _, t := range p.Types {
+-			typeCounts[t.Type.Name]++
+-		}
+-	}
+-
+-	fmt.Printf("Heaviest Pokémon: %s (%d)\n", heaviest.Name, heaviest.Weight)
+-	fmt.Printf("Tallest Pokémon: %s (%d)\n", tallest.Name, tallest.Height)
+-
+-	var favType string
+-	maxCount := 0
+-	for t, count := range typeCounts {
+-		if count > maxCount {
+-			maxCount = count
+-			favType = t
+-		}
+-	}
+-	if favType != "" {
+-		fmt.Printf("Favorite Type: %s (%d)\n", colorType(favType), maxCount)
+-	}
+-
+-	fmt.Println("Type Breakdown:")
+-	for t, count := range typeCounts {
+-		fmt.Printf("  - %s: %d\n", colorType(t), count)
+-	}
+-
+-	return nil
+-}
+-
+-// commandFilter searches and displays all caught Pokémon matching the specified elemental type.
+-func commandFilter(config *config, args ...string) error {
+-	if len(args) == 0 {
+-		return fmt.Errorf("you must provide an elemental type")
+-	}
+-	targetType := strings.ToLower(args[0])
+-
+-	var matches []Pokemon
+-	for _, p := range config.pokedex {
+-		for _, t := range p.Types {
+-			if strings.ToLower(t.Type.Name) == targetType {
+-				matches = append(matches, p)
+-				break
+-			}
+-		}
+-	}
+-
+-	if len(matches) == 0 {
+-		fmt.Printf("No %s Pokémon found in your Pokédex.\n", colorType(targetType))
+-		return nil
+-	}
+-
+-	titleType := targetType
+-	if len(targetType) > 0 {
+-		titleType = strings.ToUpper(targetType[:1]) + targetType[1:]
+-	}
+-	fmt.Printf("%s Pokémon in your Pokédex:\n", titleType)
+-	for _, p := range matches {
+-		fmt.Printf(" - %s\n", p.Name)
+-	}
+-	return nil
+-}
+-
+-// GetCommands creates and returns the registry mapping command names to their cliCommand definitions.
+-func GetCommands() map[string]cliCommand {
+-	commands := make(map[string]cliCommand)
+-
+-	commands["exit"] = cliCommand{
+-		name:        "exit",
+-		description: "Exit the Pokedex",
+-		callback:    commandExit,
+-	}
+-
+-	commands["help"] = cliCommand{
+-		name:        "help",
+-		description: "Displays a help message",
+-		callback:    commandHelp,
+-	}
+-
+-	commands["map"] = cliCommand{
+-		name:        "map",
+-		description: "Displays the next 20 locations",
+-		callback:    commandMap,
+-	}
+-
+-	commands["mapb"] = cliCommand{
+-		name:        "mapb",
+-		description: "Displays the previous 20 locations",
+-		callback:    commandMapb,
+-	}
+-
+-	commands["explore"] = cliCommand{
+-		name:        "explore",
+-		description: "Shows all pokemon in a given area",
+-		callback:    commandExplore,
+-	}
+-
+-	commands["catch"] = cliCommand{
+-		name:        "catch",
+-		description: "Attempt to catch a pokemon",
+-		callback:    commandCatch,
+-	}
+-
+-	commands["inspect"] = cliCommand{
+-		name:        "inspect",
+-		description: "View details about a caught pokemon",
+-		callback:    commandInspect,
+-	}
+-
+-	commands["pokedex"] = cliCommand{
+-		name:        "pokedex",
+-		description: "List all caught pokemon",
+-		callback:    commandPokedex,
+-	}
+-
+-	commands["save"] = cliCommand{
+-		name:        "save",
+-		description: "Save your Pokédex to disk",
+-		callback:    commandSave,
+-	}
+-
+-	commands["load"] = cliCommand{
+-		name:        "load",
+-		description: "Load your Pokédex from disk",
+-		callback:    commandLoad,
+-	}
+-
+-	commands["release"] = cliCommand{
+-		name:        "release",
+-		description: "Release a caught pokemon back into the wild",
+-		callback:    commandRelease,
+-	}
+-
+-	commands["summary"] = cliCommand{
+-		name:        "summary",
+-		description: "Display trainer statistics and collection overview",
+-		callback:    commandSummary,
+-	}
+-
+-	commands["filter"] = cliCommand{
+-		name:        "filter",
+-		description: "Filter caught Pokémon by elemental type",
+-		callback:    commandFilter,
+-	}
+-
+-	return commands
+-}
+diff --git a/repl_test.go b/repl_test.go
+deleted file mode 100644
+index b20f8a9..0000000
+--- a/repl_test.go
++++ /dev/null
+@@ -1,1215 +0,0 @@
+-package main
+-
+-import (
+-	"bufio"
+-	"bytes"
+-	"encoding/json"
+-	"io"
+-	"net/http"
+-	"net/http/httptest"
+-	"os"
+-	"os/exec"
+-	"strings"
+-	"testing"
+-	"time"
+-
+-	"pokedexcli/internal/pokecache"
+-)
+-
+-func TestMain(m *testing.M) {
+-	SetColorEnabled(false)
+-	os.Exit(m.Run())
+-}
+-
+-func TestCleanInput(t *testing.T) {
+-	cases := []struct {
+-		name     string
+-		input    string
+-		expected []string
+-	}{
+-		{
+-			name:     "mixed case with surrounding whitespace",
+-			input:    "  Hello  world  ",
+-			expected: []string{"hello", "world"},
+-		},
+-		{
+-			name:     "multiple spaces between words",
+-			input:    "  Mamma   Mia               ",
+-			expected: []string{"mamma", "mia"},
+-		},
+-		{
+-			name:     "all uppercase",
+-			input:    "PIKACHU CHARMANDER BULBASAUR",
+-			expected: []string{"pikachu", "charmander", "bulbasaur"},
+-		},
+-		{
+-			name:     "tabs and newlines as whitespace",
+-			input:    "charmander\t\nbulbasaur \t squirtle\n",
+-			expected: []string{"charmander", "bulbasaur", "squirtle"},
+-		},
+-		{
+-			name:     "empty string",
+-			input:    "",
+-			expected: []string{},
+-		},
+-		{
+-			name:     "only spaces",
+-			input:    "      ",
+-			expected: []string{},
+-		},
+-		{
+-			name:     "only whitespace characters",
+-			input:    " \t \n \r ",
+-			expected: []string{},
+-		},
+-		{
+-			name:     "single word with whitespace",
+-			input:    "   Pikachu   ",
+-			expected: []string{"pikachu"},
+-		},
+-		{
+-			name:     "punctuation and special characters preserved",
+-			input:    "  hello, world! 123 #pokemon  ",
+-			expected: []string{"hello,", "world!", "123", "#pokemon"},
+-		},
+-	}
+-
+-	for _, c := range cases {
+-		t.Run(c.name, func(t *testing.T) {
+-			actual := cleanInput(c.input)
+-			if len(actual) != len(c.expected) {
+-				t.Fatalf("cleanInput(%q) length = %d, expected %d (got %v, expected %v)",
+-					c.input, len(actual), len(c.expected), actual, c.expected)
+-			}
+-
+-			for i := range actual {
+-				if actual[i] != c.expected[i] {
+-					t.Errorf("cleanInput(%q)[%d] = %q, expected %q",
+-						c.input, i, actual[i], c.expected[i])
+-				}
+-			}
+-		})
+-	}
+-}
+-
+-func TestGetCommands(t *testing.T) {
+-	commands := GetCommands()
+-
+-	if commands == nil {
+-		t.Fatal("GetCommands() returned nil")
+-	}
+-
+-	expectedCommands := []struct {
+-		key          string
+-		expectedName string
+-		expectedDesc string
+-		expectFound  bool
+-	}{
+-		{
+-			key:          "exit",
+-			expectedName: "exit",
+-			expectedDesc: "Exit the Pokedex",
+-			expectFound:  true,
+-		},
+-		{
+-			key:          "help",
+-			expectedName: "help",
+-			expectedDesc: "Displays a help message",
+-			expectFound:  true,
+-		},
+-		{
+-			key:          "map",
+-			expectedName: "map",
+-			expectedDesc: "Displays the next 20 locations",
+-			expectFound:  true,
+-		},
+-		{
+-			key:          "mapb",
+-			expectedName: "mapb",
+-			expectedDesc: "Displays the previous 20 locations",
+-			expectFound:  true,
+-		},
+-		{
+-			key:          "explore",
+-			expectedName: "explore",
+-			expectedDesc: "Shows all pokemon in a given area",
+-			expectFound:  true,
+-		},
+-		{
+-			key:          "catch",
+-			expectedName: "catch",
+-			expectedDesc: "Attempt to catch a pokemon",
+-			expectFound:  true,
+-		},
+-		{
+-			key:          "inspect",
+-			expectedName: "inspect",
+-			expectedDesc: "View details about a caught pokemon",
+-			expectFound:  true,
+-		},
+-		{
+-			key:          "pokedex",
+-			expectedName: "pokedex",
+-			expectedDesc: "List all caught pokemon",
+-			expectFound:  true,
+-		},
+-		{
+-			key:          "save",
+-			expectedName: "save",
+-			expectedDesc: "Save your Pokédex to disk",
+-			expectFound:  true,
+-		},
+-		{
+-			key:          "load",
+-			expectedName: "load",
+-			expectedDesc: "Load your Pokédex from disk",
+-			expectFound:  true,
+-		},
+-		{
+-			key:          "release",
+-			expectedName: "release",
+-			expectedDesc: "Release a caught pokemon back into the wild",
+-			expectFound:  true,
+-		},
+-		{
+-			key:          "summary",
+-			expectedName: "summary",
+-			expectedDesc: "Display trainer statistics and collection overview",
+-			expectFound:  true,
+-		},
+-		{
+-			key:          "filter",
+-			expectedName: "filter",
+-			expectedDesc: "Filter caught Pokémon by elemental type",
+-			expectFound:  true,
+-		},
+-		{
+-			key:         "invalid",
+-			expectFound: false,
+-		},
+-		{
+-			key:         "EXIT",
+-			expectFound: false,
+-		},
+-		{
+-			key:         "",
+-			expectFound: false,
+-		},
+-	}
+-
+-	for _, tc := range expectedCommands {
+-		t.Run("key_"+tc.key, func(t *testing.T) {
+-			cmd, ok := commands[tc.key]
+-			if ok != tc.expectFound {
+-				t.Fatalf("commands[%q] found = %v, expected %v", tc.key, ok, tc.expectFound)
+-			}
+-
+-			if tc.expectFound {
+-				if cmd.name != tc.expectedName {
+-					t.Errorf("cmd.name = %q, expected %q", cmd.name, tc.expectedName)
+-				}
+-				if cmd.description != tc.expectedDesc {
+-					t.Errorf("cmd.description = %q, expected %q", cmd.description, tc.expectedDesc)
+-				}
+-				if cmd.callback == nil {
+-					t.Errorf("cmd.callback is nil for command %q", tc.key)
+-				}
+-			}
+-		})
+-	}
+-
+-	if len(commands) != 13 {
+-		t.Errorf("expected exactly 13 commands registered, got %d", len(commands))
+-	}
+-}
+-
+-func TestCommandHelp(t *testing.T) {
+-	cfg := &config{
+-		commands: GetCommands(),
+-	}
+-
+-	testCases := []struct {
+-		name string
+-		call func() error
+-	}{
+-		{
+-			name: "direct commandHelp call",
+-			call: func() error {
+-				return commandHelp(cfg)
+-			},
+-		},
+-		{
+-			name: "callback from getCommands",
+-			call: func() error {
+-				cmd, ok := GetCommands()["help"]
+-				if !ok {
+-					t.Fatal("help command not found in getCommands")
+-				}
+-				return cmd.callback(cfg)
+-			},
+-		},
+-	}
+-
+-	for _, tc := range testCases {
+-		t.Run(tc.name, func(t *testing.T) {
+-			// Capture stdout
+-			oldStdout := os.Stdout
+-			r, w, err := os.Pipe()
+-			if err != nil {
+-				t.Fatalf("failed to create pipe: %v", err)
+-			}
+-			os.Stdout = w
+-
+-			callErr := tc.call()
+-
+-			// Restore stdout and read output
+-			w.Close()
+-			os.Stdout = oldStdout
+-
+-			var buf bytes.Buffer
+-			_, _ = io.Copy(&buf, r)
+-			r.Close()
+-
+-			if callErr != nil {
+-				t.Errorf("commandHelp() returned unexpected error: %v", callErr)
+-			}
+-
+-			output := buf.String()
+-			expectedSubstrings := []string{
+-				"exit: Exit the Pokedex",
+-				"help: Displays a help message",
+-			}
+-
+-			for _, sub := range expectedSubstrings {
+-				if !strings.Contains(output, sub) {
+-					t.Errorf("expected help output to contain %q, but got: %q", sub, output)
+-				}
+-			}
+-		})
+-	}
+-}
+-
+-func TestCommandExit(t *testing.T) {
+-	cfg := &config{
+-		commands: GetCommands(),
+-	}
+-
+-	// When executed in subprocess mode, trigger the specified exit scenario and return
+-	mode := os.Getenv("TEST_COMMAND_EXIT_MODE")
+-	if mode != "" {
+-		switch mode {
+-		case "direct":
+-			_ = commandExit(cfg)
+-		case "callback":
+-			cmd := GetCommands()["exit"]
+-			_ = cmd.callback(cfg)
+-		case "scanner":
+-			scanner := bufio.NewScanner(strings.NewReader("exit\n"))
+-			if scanner.Scan() {
+-				words := cleanInput(scanner.Text())
+-				if len(words) > 0 {
+-					cmd := GetCommands()[words[0]]
+-					_ = cmd.callback(cfg)
+-				}
+-			}
+-		}
+-		return
+-	}
+-
+-	cases := []struct {
+-		name string
+-		mode string
+-	}{
+-		{
+-			name: "direct commandExit execution",
+-			mode: "direct",
+-		},
+-		{
+-			name: "callback from getCommands exit",
+-			mode: "callback",
+-		},
+-		{
+-			name: "input scanner triggering exit command",
+-			mode: "scanner",
+-		},
+-	}
+-
+-	for _, tc := range cases {
+-		t.Run(tc.name, func(t *testing.T) {
+-			cmd := exec.Command(os.Args[0], "-test.run=^TestCommandExit$")
+-			cmd.Env = append(os.Environ(), "TEST_COMMAND_EXIT_MODE="+tc.mode)
+-			out, err := cmd.CombinedOutput()
+-			if err != nil {
+-				t.Fatalf("expected commandExit to exit cleanly (code 0), got: %v, output: %s", err, string(out))
+-			}
+-
+-			expectedMessage := "Closing the Pokedex... Goodbye!"
+-			if !strings.Contains(string(out), expectedMessage) {
+-				t.Errorf("expected output to contain %q, got: %q", expectedMessage, string(out))
+-			}
+-		})
+-	}
+-}
+-
+-func TestCommandMapAndMapb(t *testing.T) {
+-	t.Run("map on last page", func(t *testing.T) {
+-		cfg := &config{
+-			next: "",
+-		}
+-		err := commandMap(cfg)
+-		if err == nil || err.Error() != "you're on the last page" {
+-			t.Fatalf("expected 'you're on the last page', got: %v", err)
+-		}
+-	})
+-
+-	t.Run("mapb on first page", func(t *testing.T) {
+-		cfg := &config{
+-			previous: "",
+-		}
+-		err := commandMapb(cfg)
+-		if err == nil || err.Error() != "you're on the first page" {
+-			t.Fatalf("expected 'you're on the first page', got: %v", err)
+-		}
+-	})
+-
+-	t.Run("map and mapb successful pagination", func(t *testing.T) {
+-		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+-			path := r.URL.Path
+-			if strings.Contains(path, "page2") {
+-				resp := locationAreaResponse{
+-					Count: 40,
+-					Next:  nil,
+-					Results: []struct {
+-						Name string `json:"name"`
+-						URL  string `json:"url"`
+-					}{
+-						{Name: "area-3", URL: "url-3"},
+-						{Name: "area-4", URL: "url-4"},
+-					},
+-				}
+-				prev := "http://" + r.Host + "/page1"
+-				resp.Previous = &prev
+-				w.Header().Set("Content-Type", "application/json")
+-				_ = json.NewEncoder(w).Encode(resp)
+-			} else {
+-				next := "http://" + r.Host + "/page2"
+-				resp := locationAreaResponse{
+-					Count: 40,
+-					Next:  &next,
+-					Results: []struct {
+-						Name string `json:"name"`
+-						URL  string `json:"url"`
+-					}{
+-						{Name: "area-1", URL: "url-1"},
+-						{Name: "area-2", URL: "url-2"},
+-					},
+-				}
+-				w.Header().Set("Content-Type", "application/json")
+-				_ = json.NewEncoder(w).Encode(resp)
+-			}
+-		}))
+-		defer server.Close()
+-
+-		cfg := &config{
+-			next:     server.URL + "/page1",
+-			previous: "",
+-		}
+-
+-		// First map call
+-		err := commandMap(cfg)
+-		if err != nil {
+-			t.Fatalf("unexpected error on commandMap: %v", err)
+-		}
+-		if cfg.next != server.URL+"/page2" {
+-			t.Errorf("expected cfg.next to be page2 URL, got %q", cfg.next)
+-		}
+-		if cfg.previous != "" {
+-			t.Errorf("expected cfg.previous to be empty, got %q", cfg.previous)
+-		}
+-
+-		// Second map call (advance to page 2)
+-		err = commandMap(cfg)
+-		if err != nil {
+-			t.Fatalf("unexpected error on second commandMap: %v", err)
+-		}
+-		if cfg.next != "" {
+-			t.Errorf("expected cfg.next to be empty on last page, got %q", cfg.next)
+-		}
+-		if cfg.previous != server.URL+"/page1" {
+-			t.Errorf("expected cfg.previous to be page1 URL, got %q", cfg.previous)
+-		}
+-
+-		// mapb call (go back to page 1)
+-		err = commandMapb(cfg)
+-		if err != nil {
+-			t.Fatalf("unexpected error on commandMapb: %v", err)
+-		}
+-		if cfg.next != server.URL+"/page2" {
+-			t.Errorf("expected cfg.next to be page2 URL after mapb, got %q", cfg.next)
+-		}
+-		if cfg.previous != "" {
+-			t.Errorf("expected cfg.previous to be empty after mapb, got %q", cfg.previous)
+-		}
+-
+-		// mapb call again should fail because we are on the first page
+-		err = commandMapb(cfg)
+-		if err == nil || err.Error() != "you're on the first page" {
+-			t.Fatalf("expected 'you're on the first page', got: %v", err)
+-		}
+-	})
+-}
+-
+-func TestCommandExplore(t *testing.T) {
+-	t.Run("missing location argument", func(t *testing.T) {
+-		cfg := &config{
+-			cache: pokecache.NewCache(5 * time.Second),
+-		}
+-		err := commandExplore(cfg)
+-		if err == nil {
+-			t.Fatal("expected error when no location argument is provided, got nil")
+-		}
+-	})
+-
+-	t.Run("explore reads from cache and displays pokemon", func(t *testing.T) {
+-		cfg := &config{
+-			cache: pokecache.NewCache(5 * time.Second),
+-		}
+-
+-		mockArea := LocationArea{
+-			Name: "test-area",
+-			PokemonEncounters: []struct {
+-				Pokemon struct {
+-					Name string `json:"name"`
+-					URL  string `json:"url"`
+-				} `json:"pokemon"`
+-				VersionDetails []struct {
+-					Version struct {
+-						Name string `json:"name"`
+-						URL  string `json:"url"`
+-					} `json:"version"`
+-					MaxChance        int `json:"max_chance"`
+-					EncounterDetails []struct {
+-						MinLevel int `json:"min_level"`
+-						MaxLevel int `json:"max_level"`
+-						Chance   int `json:"chance"`
+-						Method   struct {
+-							Name string `json:"name"`
+-							URL  string `json:"url"`
+-						} `json:"method"`
+-						ConditionValues []struct {
+-							Name string `json:"name"`
+-							URL  string `json:"url"`
+-						} `json:"condition_values"`
+-						PokemonDetails *string `json:"pokemon_details"`
+-					} `json:"encounter_details"`
+-				} `json:"version_details"`
+-			}{
+-				{
+-					Pokemon: struct {
+-						Name string `json:"name"`
+-						URL  string `json:"url"`
+-					}{
+-						Name: "pikachu",
+-					},
+-				},
+-				{
+-					Pokemon: struct {
+-						Name string `json:"name"`
+-						URL  string `json:"url"`
+-					}{
+-						Name: "bulbasaur",
+-					},
+-				},
+-			},
+-		}
+-
+-		data, err := json.Marshal(mockArea)
+-		if err != nil {
+-			t.Fatalf("failed to marshal mock area: %v", err)
+-		}
+-
+-		url := "https://pokeapi.co/api/v2/location-area/test-area"
+-		cfg.cache.Add(url, data)
+-
+-		oldStdout := os.Stdout
+-		r, w, err := os.Pipe()
+-		if err != nil {
+-			t.Fatalf("failed to create pipe: %v", err)
+-		}
+-		os.Stdout = w
+-
+-		callErr := commandExplore(cfg, "test-area")
+-
+-		w.Close()
+-		os.Stdout = oldStdout
+-
+-		var buf bytes.Buffer
+-		_, _ = io.Copy(&buf, r)
+-		r.Close()
+-
+-		if callErr != nil {
+-			t.Fatalf("commandExplore returned error: %v", callErr)
+-		}
+-
+-		output := buf.String()
+-		expectedSubstrings := []string{
+-			"Exploring test-area...",
+-			"Found Pokemon:",
+-			"- pikachu",
+-			"- bulbasaur",
+-		}
+-		for _, sub := range expectedSubstrings {
+-			if !strings.Contains(output, sub) {
+-				t.Errorf("expected output to contain %q, got: %q", sub, output)
+-			}
+-		}
+-	})
+-}
+-
+-func TestCommandCatch(t *testing.T) {
+-	t.Run("missing pokemon name argument", func(t *testing.T) {
+-		cfg := &config{
+-			cache: pokecache.NewCache(5 * time.Second),
+-		}
+-		err := commandCatch(cfg)
+-		if err == nil {
+-			t.Fatal("expected error when no pokemon argument is provided, got nil")
+-		}
+-	})
+-
+-	t.Run("catch with mocked cached pokemon", func(t *testing.T) {
+-		cfg := &config{
+-			cache:   pokecache.NewCache(5 * time.Second),
+-			pokedex: make(map[string]Pokemon),
+-		}
+-
+-		mockPokemon := Pokemon{
+-			ID:             25,
+-			Name:           "pikachu",
+-			BaseExperience: 50,
+-			Height:         4,
+-			Weight:         60,
+-		}
+-
+-		data, err := json.Marshal(mockPokemon)
+-		if err != nil {
+-			t.Fatalf("failed to marshal mock pokemon: %v", err)
+-		}
+-
+-		url := "https://pokeapi.co/api/v2/pokemon/pikachu"
+-		cfg.cache.Add(url, data)
+-
+-		oldStdout := os.Stdout
+-		r, w, err := os.Pipe()
+-		if err != nil {
+-			t.Fatalf("failed to create pipe: %v", err)
+-		}
+-		os.Stdout = w
+-
+-		callErr := commandCatch(cfg, "pikachu")
+-
+-		w.Close()
+-		os.Stdout = oldStdout
+-
+-		var buf bytes.Buffer
+-		_, _ = io.Copy(&buf, r)
+-		r.Close()
+-
+-		if callErr != nil {
+-			t.Fatalf("commandCatch returned unexpected error: %v", callErr)
+-		}
+-
+-		output := buf.String()
+-		expectedPrefix := "Throwing a Pokeball at pikachu..."
+-		if !strings.Contains(output, expectedPrefix) {
+-			t.Errorf("expected output to contain %q, got: %q", expectedPrefix, output)
+-		}
+-
+-		if strings.Contains(output, "pikachu was caught!") {
+-			if _, exists := cfg.pokedex["pikachu"]; !exists {
+-				t.Errorf("pikachu was reported caught but not found in pokedex")
+-			}
+-		} else if !strings.Contains(output, "pikachu escaped!") {
+-			t.Errorf("output must contain either caught or escaped message, got: %q", output)
+-		}
+-	})
+-}
+-
+-func TestCommandInspect(t *testing.T) {
+-	t.Run("missing pokemon name argument", func(t *testing.T) {
+-		cfg := &config{
+-			pokedex: make(map[string]Pokemon),
+-		}
+-		err := commandInspect(cfg)
+-		if err == nil {
+-			t.Fatal("expected error when no pokemon argument is provided, got nil")
+-		}
+-	})
+-
+-	t.Run("uncaught pokemon", func(t *testing.T) {
+-		cfg := &config{
+-			pokedex: make(map[string]Pokemon),
+-		}
+-
+-		oldStdout := os.Stdout
+-		r, w, err := os.Pipe()
+-		if err != nil {
+-			t.Fatalf("failed to create pipe: %v", err)
+-		}
+-		os.Stdout = w
+-
+-		callErr := commandInspect(cfg, "pidgey")
+-
+-		w.Close()
+-		os.Stdout = oldStdout
+-
+-		var buf bytes.Buffer
+-		_, _ = io.Copy(&buf, r)
+-		r.Close()
+-
+-		if callErr != nil {
+-			t.Fatalf("unexpected error: %v", callErr)
+-		}
+-
+-		output := buf.String()
+-		expected := "you have not caught that pokemon"
+-		if !strings.Contains(output, expected) {
+-			t.Errorf("expected output to contain %q, got: %q", expected, output)
+-		}
+-	})
+-
+-	t.Run("caught pokemon displays details", func(t *testing.T) {
+-		cfg := &config{
+-			pokedex: make(map[string]Pokemon),
+-		}
+-
+-		pokemon := Pokemon{
+-			ID:     16,
+-			Name:   "pidgey",
+-			Height: 3,
+-			Weight: 18,
+-		}
+-		pokemon.Stats = []struct {
+-			BaseStat int `json:"base_stat"`
+-			Effort   int `json:"effort"`
+-			Stat     struct {
+-				Name string `json:"name"`
+-				URL  string `json:"url"`
+-			} `json:"stat"`
+-		}{
+-			{
+-				BaseStat: 40,
+-				Stat: struct {
+-					Name string `json:"name"`
+-					URL  string `json:"url"`
+-				}{Name: "hp"},
+-			},
+-			{
+-				BaseStat: 45,
+-				Stat: struct {
+-					Name string `json:"name"`
+-					URL  string `json:"url"`
+-				}{Name: "attack"},
+-			},
+-		}
+-		pokemon.Types = []struct {
+-			Slot int `json:"slot"`
+-			Type struct {
+-				Name string `json:"name"`
+-				URL  string `json:"url"`
+-			} `json:"type"`
+-		}{
+-			{
+-				Slot: 1,
+-				Type: struct {
+-					Name string `json:"name"`
+-					URL  string `json:"url"`
+-				}{Name: "normal"},
+-			},
+-			{
+-				Slot: 2,
+-				Type: struct {
+-					Name string `json:"name"`
+-					URL  string `json:"url"`
+-				}{Name: "flying"},
+-			},
+-		}
+-
+-		cfg.pokedex["pidgey"] = pokemon
+-
+-		oldStdout := os.Stdout
+-		r, w, err := os.Pipe()
+-		if err != nil {
+-			t.Fatalf("failed to create pipe: %v", err)
+-		}
+-		os.Stdout = w
+-
+-		callErr := commandInspect(cfg, "pidgey")
+-
+-		w.Close()
+-		os.Stdout = oldStdout
+-
+-		var buf bytes.Buffer
+-		_, _ = io.Copy(&buf, r)
+-		r.Close()
+-
+-		if callErr != nil {
+-			t.Fatalf("unexpected error: %v", callErr)
+-		}
+-
+-		output := buf.String()
+-		expectedStrings := []string{
+-			"Name: pidgey",
+-			"Height: 3",
+-			"Weight: 18",
+-			"Stats:",
+-			"  -hp: 40",
+-			"  -attack: 45",
+-			"Types:",
+-			"  - normal",
+-			"  - flying",
+-		}
+-		for _, exp := range expectedStrings {
+-			if !strings.Contains(output, exp) {
+-				t.Errorf("expected output to contain %q, but got: %q", exp, output)
+-			}
+-		}
+-	})
+-}
+-
+-func TestCommandPokedex(t *testing.T) {
+-	t.Run("empty pokedex", func(t *testing.T) {
+-		cfg := &config{
+-			pokedex: make(map[string]Pokemon),
+-		}
+-
+-		oldStdout := os.Stdout
+-		r, w, err := os.Pipe()
+-		if err != nil {
+-			t.Fatalf("failed to create pipe: %v", err)
+-		}
+-		os.Stdout = w
+-
+-		callErr := commandPokedex(cfg)
+-
+-		w.Close()
+-		os.Stdout = oldStdout
+-
+-		var buf bytes.Buffer
+-		_, _ = io.Copy(&buf, r)
+-		r.Close()
+-
+-		if callErr != nil {
+-			t.Fatalf("unexpected error: %v", callErr)
+-		}
+-
+-		output := buf.String()
+-		if !strings.Contains(output, "Your Pokedex:") {
+-			t.Errorf("expected output to contain 'Your Pokedex:', got: %q", output)
+-		}
+-	})
+-
+-	t.Run("pokedex with caught pokemon", func(t *testing.T) {
+-		cfg := &config{
+-			pokedex: map[string]Pokemon{
+-				"pidgey":   {Name: "pidgey"},
+-				"caterpie": {Name: "caterpie"},
+-			},
+-		}
+-
+-		oldStdout := os.Stdout
+-		r, w, err := os.Pipe()
+-		if err != nil {
+-			t.Fatalf("failed to create pipe: %v", err)
+-		}
+-		os.Stdout = w
+-
+-		callErr := commandPokedex(cfg)
+-
+-		w.Close()
+-		os.Stdout = oldStdout
+-
+-		var buf bytes.Buffer
+-		_, _ = io.Copy(&buf, r)
+-		r.Close()
+-
+-		if callErr != nil {
+-			t.Fatalf("unexpected error: %v", callErr)
+-		}
+-
+-		output := buf.String()
+-		expectedStrings := []string{
+-			"Your Pokedex:",
+-			" - pidgey",
+-			" - caterpie",
+-		}
+-		for _, exp := range expectedStrings {
+-			if !strings.Contains(output, exp) {
+-				t.Errorf("expected output to contain %q, got: %q", exp, output)
+-			}
+-		}
+-	})
+-}
+-
+-func TestSaveAndLoadPokedex(t *testing.T) {
+-	tmpFile, err := os.CreateTemp("", "pokedex-test-*.json")
+-	if err != nil {
+-		t.Fatalf("failed to create temp file: %v", err)
+-	}
+-	tmpPath := tmpFile.Name()
+-	tmpFile.Close()
+-	defer os.Remove(tmpPath)
+-
+-	cfg := &config{
+-		saveFile: tmpPath,
+-		pokedex: map[string]Pokemon{
+-			"pikachu": {ID: 25, Name: "pikachu", BaseExperience: 112},
+-		},
+-	}
+-
+-	// Test commandSave
+-	if err := commandSave(cfg); err != nil {
+-		t.Fatalf("commandSave returned error: %v", err)
+-	}
+-
+-	// Create new config and load
+-	newCfg := &config{
+-		saveFile: tmpPath,
+-		pokedex:  make(map[string]Pokemon),
+-	}
+-	if err := commandLoad(newCfg); err != nil {
+-		t.Fatalf("commandLoad returned error: %v", err)
+-	}
+-
+-	if p, ok := newCfg.pokedex["pikachu"]; !ok || p.Name != "pikachu" {
+-		t.Errorf("expected pikachu in loaded pokedex, got: %+v", newCfg.pokedex)
+-	}
+-
+-	// Test loading when file does not exist
+-	nonExistentCfg := &config{
+-		saveFile: filepathJoinNonExistent(),
+-		pokedex:  make(map[string]Pokemon),
+-	}
+-	if err := loadPokedex(nonExistentCfg); err != nil {
+-		t.Errorf("expected nil error loading non-existent file, got: %v", err)
+-	}
+-}
+-
+-func filepathJoinNonExistent() string {
+-	return filepathSafeNonExistent()
+-}
+-
+-func filepathSafeNonExistent() string {
+-	return "/tmp/non-existent-pokedex-12345.json"
+-}
+-
+-func TestCommandRelease(t *testing.T) {
+-	t.Run("missing pokemon name argument", func(t *testing.T) {
+-		cfg := &config{
+-			pokedex: make(map[string]Pokemon),
+-		}
+-		err := commandRelease(cfg)
+-		if err == nil {
+-			t.Fatal("expected error when no pokemon argument is provided, got nil")
+-		}
+-	})
+-
+-	t.Run("release uncaught pokemon", func(t *testing.T) {
+-		cfg := &config{
+-			pokedex: make(map[string]Pokemon),
+-		}
+-
+-		oldStdout := os.Stdout
+-		r, w, err := os.Pipe()
+-		if err != nil {
+-			t.Fatalf("failed to create pipe: %v", err)
+-		}
+-		os.Stdout = w
+-
+-		callErr := commandRelease(cfg, "charizard")
+-
+-		w.Close()
+-		os.Stdout = oldStdout
+-
+-		var buf bytes.Buffer
+-		_, _ = io.Copy(&buf, r)
+-		r.Close()
+-
+-		if callErr != nil {
+-			t.Fatalf("unexpected error: %v", callErr)
+-		}
+-
+-		output := buf.String()
+-		expected := "you have not caught that pokemon"
+-		if !strings.Contains(output, expected) {
+-			t.Errorf("expected output to contain %q, got: %q", expected, output)
+-		}
+-	})
+-
+-	t.Run("release caught pokemon successfully", func(t *testing.T) {
+-		cfg := &config{
+-			pokedex: map[string]Pokemon{
+-				"charizard": {Name: "charizard"},
+-			},
+-		}
+-
+-		oldStdout := os.Stdout
+-		r, w, err := os.Pipe()
+-		if err != nil {
+-			t.Fatalf("failed to create pipe: %v", err)
+-		}
+-		os.Stdout = w
+-
+-		callErr := commandRelease(cfg, "charizard")
+-
+-		w.Close()
+-		os.Stdout = oldStdout
+-
+-		var buf bytes.Buffer
+-		_, _ = io.Copy(&buf, r)
+-		r.Close()
+-
+-		if callErr != nil {
+-			t.Fatalf("unexpected error: %v", callErr)
+-		}
+-
+-		output := buf.String()
+-		expected := "Bye bye, charizard! charizard was released back into the wild."
+-		if !strings.Contains(output, expected) {
+-			t.Errorf("expected output to contain %q, got: %q", expected, output)
+-		}
+-
+-		if _, exists := cfg.pokedex["charizard"]; exists {
+-			t.Errorf("charizard should have been removed from pokedex")
+-		}
+-	})
+-}
+-
+-func TestCommandSummary(t *testing.T) {
+-	t.Run("empty pokedex summary", func(t *testing.T) {
+-		cfg := &config{
+-			pokedex: make(map[string]Pokemon),
+-		}
+-
+-		oldStdout := os.Stdout
+-		r, w, err := os.Pipe()
+-		if err != nil {
+-			t.Fatalf("failed to create pipe: %v", err)
+-		}
+-		os.Stdout = w
+-
+-		callErr := commandSummary(cfg)
+-
+-		w.Close()
+-		os.Stdout = oldStdout
+-
+-		var buf bytes.Buffer
+-		_, _ = io.Copy(&buf, r)
+-		r.Close()
+-
+-		if callErr != nil {
+-			t.Fatalf("unexpected error: %v", callErr)
+-		}
+-
+-		output := buf.String()
+-		if !strings.Contains(output, "Total Pokémon caught: 0") {
+-			t.Errorf("expected 0 caught count, got: %q", output)
+-		}
+-	})
+-
+-	t.Run("populated pokedex summary", func(t *testing.T) {
+-		p1 := Pokemon{
+-			Name:   "pidgey",
+-			Height: 3,
+-			Weight: 18,
+-		}
+-		p1.Types = []struct {
+-			Slot int `json:"slot"`
+-			Type struct {
+-				Name string `json:"name"`
+-				URL  string `json:"url"`
+-			} `json:"type"`
+-		}{
+-			{Type: struct {
+-				Name string `json:"name"`
+-				URL  string `json:"url"`
+-			}{Name: "normal"}},
+-		}
+-
+-		p2 := Pokemon{
+-			Name:   "gyarados",
+-			Height: 65,
+-			Weight: 2350,
+-		}
+-		p2.Types = []struct {
+-			Slot int `json:"slot"`
+-			Type struct {
+-				Name string `json:"name"`
+-				URL  string `json:"url"`
+-			} `json:"type"`
+-		}{
+-			{Type: struct {
+-				Name string `json:"name"`
+-				URL  string `json:"url"`
+-			}{Name: "water"}},
+-		}
+-
+-		cfg := &config{
+-			pokedex: map[string]Pokemon{
+-				"pidgey":   p1,
+-				"gyarados": p2,
+-			},
+-		}
+-
+-		oldStdout := os.Stdout
+-		r, w, err := os.Pipe()
+-		if err != nil {
+-			t.Fatalf("failed to create pipe: %v", err)
+-		}
+-		os.Stdout = w
+-
+-		callErr := commandSummary(cfg)
+-
+-		w.Close()
+-		os.Stdout = oldStdout
+-
+-		var buf bytes.Buffer
+-		_, _ = io.Copy(&buf, r)
+-		r.Close()
+-
+-		if callErr != nil {
+-			t.Fatalf("unexpected error: %v", callErr)
+-		}
+-
+-		output := buf.String()
+-		expectedSubs := []string{
+-			"Total Pokémon caught: 2",
+-			"Heaviest Pokémon: gyarados (2350)",
+-			"Tallest Pokémon: gyarados (65)",
+-			"Type Breakdown:",
+-			"- normal: 1",
+-			"- water: 1",
+-		}
+-		for _, exp := range expectedSubs {
+-			if !strings.Contains(output, exp) {
+-				t.Errorf("expected output to contain %q, but got: %q", exp, output)
+-			}
+-		}
+-	})
+-}
+-
+-func TestCommandFilter(t *testing.T) {
+-	t.Run("missing type argument", func(t *testing.T) {
+-		cfg := &config{
+-			pokedex: make(map[string]Pokemon),
+-		}
+-		err := commandFilter(cfg)
+-		if err == nil {
+-			t.Fatal("expected error when no type argument is provided, got nil")
+-		}
+-	})
+-
+-	t.Run("filter with no matching pokemon", func(t *testing.T) {
+-		cfg := &config{
+-			pokedex: make(map[string]Pokemon),
+-		}
+-
+-		oldStdout := os.Stdout
+-		r, w, err := os.Pipe()
+-		if err != nil {
+-			t.Fatalf("failed to create pipe: %v", err)
+-		}
+-		os.Stdout = w
+-
+-		callErr := commandFilter(cfg, "fire")
+-
+-		w.Close()
+-		os.Stdout = oldStdout
+-
+-		var buf bytes.Buffer
+-		_, _ = io.Copy(&buf, r)
+-		r.Close()
+-
+-		if callErr != nil {
+-			t.Fatalf("unexpected error: %v", callErr)
+-		}
+-
+-		output := buf.String()
+-		expected := "No fire Pokémon found in your Pokédex."
+-		if !strings.Contains(output, expected) {
+-			t.Errorf("expected output to contain %q, got: %q", expected, output)
+-		}
+-	})
+-
+-	t.Run("filter with matching pokemon", func(t *testing.T) {
+-		p1 := Pokemon{
+-			Name: "squirtle",
+-		}
+-		p1.Types = []struct {
+-			Slot int `json:"slot"`
+-			Type struct {
+-				Name string `json:"name"`
+-				URL  string `json:"url"`
+-			} `json:"type"`
+-		}{
+-			{Type: struct {
+-				Name string `json:"name"`
+-				URL  string `json:"url"`
+-			}{Name: "water"}},
+-		}
+-
+-		p2 := Pokemon{
+-			Name: "charmander",
+-		}
+-		p2.Types = []struct {
+-			Slot int `json:"slot"`
+-			Type struct {
+-				Name string `json:"name"`
+-				URL  string `json:"url"`
+-			} `json:"type"`
+-		}{
+-			{Type: struct {
+-				Name string `json:"name"`
+-				URL  string `json:"url"`
+-			}{Name: "fire"}},
+-		}
+-
+-		cfg := &config{
+-			pokedex: map[string]Pokemon{
+-				"squirtle":   p1,
+-				"charmander": p2,
+-			},
+-		}
+-
+-		oldStdout := os.Stdout
+-		r, w, err := os.Pipe()
+-		if err != nil {
+-			t.Fatalf("failed to create pipe: %v", err)
+-		}
+-		os.Stdout = w
+-
+-		callErr := commandFilter(cfg, "water")
+-
+-		w.Close()
+-		os.Stdout = oldStdout
+-
+-		var buf bytes.Buffer
+-		_, _ = io.Copy(&buf, r)
+-		r.Close()
+-
+-		if callErr != nil {
+-			t.Fatalf("unexpected error: %v", callErr)
+-		}
+-
+-		output := buf.String()
+-		if !strings.Contains(output, "Water Pokémon in your Pokédex:") {
+-			t.Errorf("expected header in output, got: %q", output)
+-		}
+-		if !strings.Contains(output, " - squirtle") {
+-			t.Errorf("expected squirtle in output, got: %q", output)
+-		}
+-		if strings.Contains(output, "charmander") {
+-			t.Errorf("charmander should not be listed under water filter, got: %q", output)
+-		}
+-	})
+-}
+

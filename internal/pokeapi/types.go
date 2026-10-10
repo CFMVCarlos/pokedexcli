@@ -1,28 +1,5 @@
-package main
+package pokeapi
 
-import "pokedexcli/internal/pokecache"
-
-// cliCommand defines a command available in the Pokedex REPL, containing its
-// command trigger name, help description, and execution callback.
-type cliCommand struct {
-	name        string
-	description string
-	callback    func(config *config, args ...string) error
-}
-
-// config stores the runtime state of the application, including registered commands,
-// pagination URLs for location areas, the response cache, captured Pokémon, and the save file path.
-type config struct {
-	commands map[string]cliCommand
-	next     string
-	previous string
-	cache    pokecache.Cache
-	pokedex  map[string]Pokemon
-	saveFile string
-}
-
-// Pokemon represents the schema returned by the PokeAPI for a specific Pokémon,
-// including its base statistics, physical attributes, and elemental types.
 type Pokemon struct {
 	ID             int    `json:"id"`
 	Name           string `json:"name"`
@@ -46,8 +23,7 @@ type Pokemon struct {
 	} `json:"types"`
 }
 
-// locationAreaResponse models the paginated list returned by the PokeAPI location-area endpoint.
-type locationAreaResponse struct {
+type LocationAreaResponse struct {
 	Count    int     `json:"count"`
 	Next     *string `json:"next"`
 	Previous *string `json:"previous"`
@@ -57,8 +33,6 @@ type locationAreaResponse struct {
 	} `json:"results"`
 }
 
-// LocationArea models detailed information about a specific location area in PokeAPI,
-// including Pokémon that can be encountered there.
 type LocationArea struct {
 	ID                   int    `json:"id"`
 	Name                 string `json:"name"`

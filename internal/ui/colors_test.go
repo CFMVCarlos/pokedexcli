@@ -1,4 +1,4 @@
-package main
+package ui
 
 import (
 	"strings"
@@ -11,12 +11,12 @@ func TestColorize(t *testing.T) {
 	defer SetColorEnabled(false)
 
 	text := "pikachu"
-	green := colorGreen(text)
+	green := ColorGreen(text)
 	if !strings.Contains(green, ansiGreen) {
 		t.Errorf("expected green ANSI code in %q", green)
 	}
 
-	yellow := colorYellow(text)
+	yellow := ColorYellow(text)
 	if !strings.Contains(yellow, ansiYellow) {
 		t.Errorf("expected yellow ANSI code in %q", yellow)
 	}
@@ -26,14 +26,14 @@ func TestColorize(t *testing.T) {
 		t.Errorf("expected red ANSI code in %q", red)
 	}
 
-	cyan := colorCyan(text)
+	cyan := ColorCyan(text)
 	if !strings.Contains(cyan, ansiCyan) {
 		t.Errorf("expected cyan ANSI code in %q", cyan)
 	}
 
 	// Test disabling colors
 	SetColorEnabled(false)
-	plain := colorGreen("plain text")
+	plain := ColorGreen("plain text")
 	if plain != "plain text" {
 		t.Errorf("expected plain text when color is disabled, got %q", plain)
 	}
@@ -69,7 +69,7 @@ func TestColorType(t *testing.T) {
 	}
 
 	for _, tc := range types {
-		colored := colorType(tc.typeName)
+		colored := ColorType(tc.typeName)
 		if !strings.Contains(colored, tc.expectedCode) {
 			t.Errorf("type %q expected code %q, got %q", tc.typeName, tc.expectedCode, colored)
 		}

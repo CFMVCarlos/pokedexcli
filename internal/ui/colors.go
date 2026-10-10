@@ -1,4 +1,4 @@
-package main
+package ui
 
 import (
 	"os"
@@ -42,8 +42,8 @@ func colorize(colorCode, text string) string {
 	return colorCode + text + ansiReset
 }
 
-// colorGreen returns green-styled text for success messages.
-func colorGreen(text string) string {
+// ColorGreen returns green-styled text for success messages.
+func ColorGreen(text string) string {
 	return colorize(ansiGreen, text)
 }
 
@@ -52,19 +52,19 @@ func colorRed(text string) string {
 	return colorize(ansiRed, text)
 }
 
-// colorYellow returns yellow-styled text for escapes and notifications.
-func colorYellow(text string) string {
+// ColorYellow returns yellow-styled text for escapes and notifications.
+func ColorYellow(text string) string {
 	return colorize(ansiYellow, text)
 }
 
-// colorCyan returns cyan-styled text for prompts and titles.
-func colorCyan(text string) string {
+// ColorCyan returns cyan-styled text for prompts and titles.
+func ColorCyan(text string) string {
 	return colorize(ansiCyan, text)
 }
 
-// colorType returns the elemental type formatted with an authentic, type-specific ANSI color
+// ColorType returns the elemental type formatted with an authentic, type-specific ANSI color
 // for all 18 official Pokémon elemental types.
-func colorType(typeName string) string {
+func ColorType(typeName string) string {
 	switch typeName {
 	case "normal":
 		return colorize(ansiWhite, typeName)

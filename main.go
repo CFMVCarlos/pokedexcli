@@ -1,24 +1,24 @@
-// Package main serves as the entrypoint for the Pokedex CLI application.
 package main
 
 import (
 	"fmt"
 	"time"
 
-	"pokedexcli/internal/pokecache"
+	"pokedexcli/internal/cli"
+	"pokedexcli/internal/pokeapi"
+	"pokedexcli/internal/repository"
 )
 
-// main initializes application state, the TTL cache, and starts the REPL.
 func main() {
 	fmt.Println("Welcome to the Pokedex!")
+	pokeClient := pokeapi.NewClient(5*time.Second, 5*time.Minute)
+	pokedexRepo := repository.NewPokedex("pokedex.json")
 
-	config := &config{
-		commands: GetCommands(),
-		next:     "https://pokeapi.co/api/v2/location-area",
-		previous: "",
-		cache:    pokecache.NewCache(5 * time.Second),
-		pokedex:  make(map[string]Pokemon),
-		saveFile: "pokedex.json",
+	config := &cli.Config{
+		Commands: cli.GetCommands(),
+		Client:   &pokeClient,
+		Pokedex:  pokedexRepo,
 	}
-	StartRepl(config)
+
+	cli.StartRepl(config)
 }
